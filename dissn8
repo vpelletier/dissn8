@@ -1,0 +1,401 @@
+#!/usr/bin/env python
+# Copyright (C) 2016  Vincent Pelletier <plr.vincent@gmail.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+"""
+FOR INTERACTIVE USE ONLY !
+This is not a python module, do not import it - run it.
+"""
+import argparse
+from collections import defaultdict
+import ConfigParser
+import itertools
+from struct import unpack
+import sys
+
+default_symbol = (None, {})
+ram_symbol_dict = {}
+rom_symbol_dict = {}
+entry_stack = []
+comment_dict = {}
+
+NUL_SPACE = None # No operand
+ZRO_SPACE = 0    # Operand is zero-page ram address
+RAM_SPACE = 1    # Operand is ram address
+ROM_SPACE = 2    # Operand is rom address
+IMM_SPACE = 3    # Operand is immediate value
+
+caller_dict = defaultdict(list)
+jumper_dict = defaultdict(list)
+
+def asPrintable(value):
+    if 0x20 <= value < 0x7f:
+        return chr(value)
+    return '.'
+
+def NONXT(addr, operand):
+    """
+    There is no fixed next-instruction address (RET & RETI).
+    """
+    pass
+def NEXTI(addr, operand):
+    """
+    Always execute next instruction (normal instructions).
+    """
+    entry_stack.append(addr + 1)
+def BRNCH(addr, operand):
+    """
+    Execute next instruction or the one after that (conditional branches).
+    """
+    entry_stack.append(addr + 1)
+    entry_stack.append(addr + 2)
+def JUMPI(addr, operand):
+    """
+    Jump to some far address (unconditional branches).
+    Keep track of what jumped to where and declare a label if missing.
+    """
+    entry_stack.append(operand)
+    jumper_dict[operand].append(addr)
+    if operand not in rom_symbol_dict:
+        rom_symbol_dict[operand] = 'label_%04x' % operand
+def CALLI(addr, operand):
+    """
+    Call some address (call instructions).
+    Keep track of what called where and declare a label if missing.
+    """
+    entry_stack.append(operand)
+    entry_stack.append(addr + 1)
+    caller_dict[operand].append(addr)
+    if operand not in rom_symbol_dict:
+        rom_symbol_dict[operand] = 'func_%04x' % operand
+
+opcode_dict = {
+    0x00: (0x0000, NUL_SPACE, NEXTI, 'NOP',    None),
+    0x02: (0x00ff, ZRO_SPACE, NEXTI, 'B0XCH',  'A, %s'),
+    0x03: (0x00ff, ZRO_SPACE, NEXTI, 'B0ADD',  '%s, A'),
+    0x04: (0x0000, NUL_SPACE, NEXTI, 'PUSH',   None),
+    0x05: (0x0000, NUL_SPACE, NEXTI, 'POP',    None),
+    0x06: (0x00ff, IMM_SPACE, BRNCH, 'CMPRS',  'A, %s'),
+    0x07: (0x00ff, RAM_SPACE, BRNCH, 'CMPRS',  'A, %s'),
+    0x08: (0x00ff, RAM_SPACE, NEXTI, 'RRC',    '%s'),
+    0x09: (0x00ff, RAM_SPACE, NEXTI, 'RRCM',   '%s'),
+    0x0a: (0x00ff, RAM_SPACE, NEXTI, 'RLC',    '%s'),
+    0x0b: (0x00ff, RAM_SPACE, NEXTI, 'RLCM',   '%s'),
+    0x0d: (0x0000, NUL_SPACE, NEXTI, 'MOVC',   None),
+    0x0e: (0x0000, NUL_SPACE, NONXT, 'RET',    None),
+    0x0f: (0x0000, NUL_SPACE, NONXT, 'RETI',   None),
+    0x10: (0x00ff, RAM_SPACE, NEXTI, 'ADC',    'A, %s'),
+    0x11: (0x00ff, RAM_SPACE, NEXTI, 'ADC',    '%s, A'),
+    0x12: (0x00ff, RAM_SPACE, NEXTI, 'ADD',    'A, %s'),
+    0x13: (0x00ff, RAM_SPACE, NEXTI, 'ADD',    '%s, A'),
+    0x14: (0x00ff, IMM_SPACE, NEXTI, 'ADD',    'A, %s'),
+    0x15: (0x00ff, RAM_SPACE, BRNCH, 'INCS',   '%s'),
+    0x16: (0x00ff, RAM_SPACE, BRNCH, 'INCMS',  '%s'),
+    0x17: (0x00ff, RAM_SPACE, NEXTI, 'SWAP',   '%s'),
+    0x18: (0x00ff, RAM_SPACE, NEXTI, 'OR',     'A, %s'),
+    0x19: (0x00ff, RAM_SPACE, NEXTI, 'OR',     '%s, A'),
+    0x1a: (0x00ff, IMM_SPACE, NEXTI, 'OR',     'A, %s'),
+    0x1b: (0x00ff, RAM_SPACE, NEXTI, 'XOR',    'A, %s'),
+    0x1c: (0x00ff, RAM_SPACE, NEXTI, 'XOR',    '%s, A'),
+    0x1d: (0x00ff, IMM_SPACE, NEXTI, 'XOR',    'A, %s'),
+    0x1e: (0x00ff, RAM_SPACE, NEXTI, 'MOV',    'A, %s'),
+    0x1f: (0x00ff, RAM_SPACE, NEXTI, 'MOV',    '%s, A'),
+    0x20: (0x00ff, RAM_SPACE, NEXTI, 'SBC',    'A, %s'),
+    0x21: (0x00ff, RAM_SPACE, NEXTI, 'SBC',    '%s, A'),
+    0x22: (0x00ff, RAM_SPACE, NEXTI, 'SUB',    'A, %s'),
+    0x23: (0x00ff, RAM_SPACE, NEXTI, 'SUB',    '%s, A'),
+    0x24: (0x00ff, IMM_SPACE, NEXTI, 'SUB',    'A, %s'),
+    0x25: (0x00ff, RAM_SPACE, BRNCH, 'DECS',   '%s'),
+    0x26: (0x00ff, RAM_SPACE, BRNCH, 'DECMS',  '%s'),
+    0x27: (0x00ff, RAM_SPACE, NEXTI, 'SWAPM',  '%s'),
+    0x28: (0x00ff, RAM_SPACE, NEXTI, 'AND',    'A, %s'),
+    0x29: (0x00ff, RAM_SPACE, NEXTI, 'AND',    '%s, A'),
+    0x2a: (0x00ff, IMM_SPACE, NEXTI, 'AND',    'A, %s'),
+    0x2b: (0x00ff, RAM_SPACE, NEXTI, 'CLR',    '%s'),
+    0x2c: (0x00ff, RAM_SPACE, NEXTI, 'XCH',    'A, %s'),
+    0x2d: (0x00ff, IMM_SPACE, NEXTI, 'MOV',    'A, %s'),
+    0x2e: (0x00ff, ZRO_SPACE, NEXTI, 'B0MOV',  'A, %s'),
+    0x2f: (0x00ff, RAM_SPACE, NEXTI, 'B0MOV',  '%s, A'),
+    0x32: (0x00ff, IMM_SPACE, NEXTI, 'B0MOV',  'R, %s'),
+    0x33: (0x00ff, IMM_SPACE, NEXTI, 'B0MOV',  'Z, %s'),
+    0x34: (0x00ff, IMM_SPACE, NEXTI, 'B0MOV',  'Y, %s'),
+    0x35: (0x00ff, IMM_SPACE, NEXTI, 'B0MOV',  'PFLAG, %s'),
+    0x36: (0x00ff, IMM_SPACE, NEXTI, 'B0MOV',  'RBANK, %s'),
+    0x40: (0x00ff, RAM_SPACE, NEXTI, 'BCLR',   '%s'),
+    0x48: (0x00ff, RAM_SPACE, NEXTI, 'BSET',   '%s'),
+    0x50: (0x00ff, RAM_SPACE, BRNCH, 'BTS0',   '%s'),
+    0x58: (0x00ff, RAM_SPACE, BRNCH, 'BTS1',   '%s'),
+    0x60: (0x00ff, ZRO_SPACE, NEXTI, 'B0BCLR', '%s'),
+    0x68: (0x00ff, ZRO_SPACE, NEXTI, 'B0BSET', '%s'),
+    0x70: (0x00ff, ZRO_SPACE, BRNCH, 'B0BTS0', '%s'),
+    0x78: (0x00ff, ZRO_SPACE, BRNCH, 'B0BTS1', '%s'),
+    0x80: (0x3fff, ROM_SPACE, JUMPI, 'JMP',    '%s'),
+    0xc0: (0x3fff, ROM_SPACE, CALLI, 'CALL',   '%s'),
+}
+
+def disassemble(address, instruction):
+    bincode = instruction >> 8
+    if bincode >= 0x80:
+        opcode_key = bincode & 0xc0
+        is_bit = False
+    elif bincode >= 0x40:
+        opcode_key = bincode & 0xf8
+        is_bit = True
+    else:
+        opcode_key = bincode
+        is_bit = False
+    try:
+        mask, opspace, jump_action, opcode, caption = opcode_dict[opcode_key]
+    except KeyError:
+        NEXTI(address, None)
+        return 'DW\t0x%04x\t; ILLEGAL OPCODE' % (instruction, )
+    if opspace == NUL_SPACE:
+        jump_action(address, None)
+    else:
+        operand = instruction & mask
+        jump_action(address, operand)
+        if opspace == ROM_SPACE:
+            symbol = rom_symbol_dict.get(operand)
+            operand_fmt = '0x%04x'
+            assert not is_bit
+        elif opspace == IMM_SPACE:
+            symbol = None
+            operand_fmt = '#0x%02x'
+            assert not is_bit
+        else: # ZRO & RAM
+            symbol, bit_dict = ram_symbol_dict.get(operand, default_symbol)
+            operand_fmt = '0x%02x'
+            if is_bit:
+                bit_address = bincode & 0x7
+                bit_symbol = bit_dict.get(bit_address)
+                if bit_symbol is None:
+                    if symbol is None:
+                        operand_fmt += '.%i' % bit_address
+                    else:
+                        symbol += '.%i' % bit_address
+                else:
+                    symbol = bit_symbol
+        if symbol is None:
+            symbol = operand_fmt % operand
+        opcode += '\t' + caption % symbol
+    return opcode
+
+def systematic(read):
+    disassembled = {}
+    rom = {}
+    for address in itertools.count():
+        instruction = read(2)
+        if not instruction:
+            break
+        instruction = unpack('<H', instruction)[0]
+        try:
+            opcode = disassemble(address, instruction)
+        except KeyError:
+            opcode = 'DW\t0x%04x\t; %s%s' % (
+                instruction,
+                asPrintable(instruction >> 8),
+                asPrintable(instruction & 0xff),
+            )
+        disassembled[address] = opcode
+    return disassembled
+
+def walker(read):
+    disassembled = {}
+    rom = {}
+    for address in itertools.count():
+        instruction = read(2)
+        if not instruction:
+            break
+        rom[address], = unpack('<H', instruction)
+    while entry_stack:
+        address = entry_stack.pop()
+        try:
+            instruction = rom.pop(address)
+        except KeyError:
+            continue # Already disassembled
+        if instruction in (
+                    0x03ce, # B0ADD PCL, A
+                    0x13ce, # ADD   PCL, A
+                ):
+            # A jump table follows.
+            # XXX: assumes jump tables are only composed of JMP (0x8000),
+            # CALL (0xc000) and NOP (0x0000). Jump table is supposed to end
+            # at the first unexpected instruction, meaning that the code
+            # after the last entry will not be jumped to as part of the
+            # table.
+            for sub_address in itertools.count(address + 1):
+                if sub_address in disassembled:
+                    continue
+                if rom[sub_address] & 0x8000 or rom[sub_address] == 0x0000:
+                    entry_stack.append(sub_address)
+                else:
+                    break
+        disassembled[address] = disassemble(address, instruction)
+    # Convert any disassembled word into a data word.
+    # Agglutinate non-disassembled portions to know their length.
+    # Ignore runs of nulls longer than 6 words (12 bytes), for readability.
+    # XXX: 6 words is a totally arbitrary value.
+    data_chunk_dict = defaultdict(list)
+    next_address = None
+    current_chunk = None
+    for address, value in sorted(rom.iteritems()):
+        if address != next_address:
+            current_chunk = data_chunk_dict[address]
+        next_address = address + 1
+        current_chunk.append(value)
+    for chunk_address, value_list in data_chunk_dict.iteritems():
+        for count, value in [
+                    (len(list(g)), k) for k, g in itertools.groupby(value_list)
+                ]:
+            if value or count < 7:
+                for offset in xrange(count):
+                    disassembled[chunk_address + offset] = (
+                        'DW\t0x%04x\t; %s%s' % (
+                            value,
+                            asPrintable(value >> 8),
+                            asPrintable(value & 0xff),
+                        )
+                    )
+            chunk_address += count
+    return disassembled
+
+def main():
+    method_dict = {
+        'walker': walker,
+        'systematic': systematic,
+    }
+
+    parser = argparse.ArgumentParser(description='SN8F228(8|3|31) USB 2.0'
+        ' full-speed 8-bits microcontroller disassembler')
+    parser.add_argument('-c', '--chip', action='append', required=True,
+        type=argparse.FileType('r'), help='Chip definition (name, regisers, '
+            'labels, comments). Document disassembled code in a separate '
+            'configuration file to automatically re-annotate on next '
+            'disassembly. Can be specified multiple time, files will be '
+            'loaded and merged in memory in the order they are specified.')
+    parser.add_argument('-m', '--method', default='walker', choices=method_dict,
+        help='Disassembly strategy: "walker" follows code path to avoid '
+            'disassembling data, "systematic" just disassembes all memory. '
+            'Default: %(default)s.')
+    parser.add_argument('-o', '--output', type=argparse.FileType('w'),
+        default=sys.stdout, help='Path to write assembly code to, or - '
+            'for stdout (default).')
+    parser.add_argument('input', type=argparse.FileType('r'), nargs='?',
+        default=sys.stdin, help='Path of binary rom image file to '
+            'disassemble, or - for stdin (default).')
+    args = parser.parse_args()
+    write = args.output.write
+
+    chip_config = ConfigParser.SafeConfigParser()
+    for chip_file in args.chip:
+        chip_config.readfp(chip_file)
+    chip = {}
+    for section_name in chip_config.sections():
+        chip[section_name] = dict(chip_config.items(section_name))
+    # chip name must be set
+    write('CHIP\t' + chip['chip']['name'] + '\n')
+    # Note: only look for duplicate ram symbols, not rom.
+    reverse_dict = {}
+    for address, name in chip['ram'].iteritems():
+        if name in reverse_dict:
+            raise ValueError(
+                'Duplicate name: %r for addresses %r and %r' % (
+                    name, reverse_dict[name], address,
+                )
+            )
+        reverse_dict[name] = address
+        if '.' in address:
+            address, bit = address.split('.')
+        else:
+            bit = None
+        address = int(address, 0)
+        try:
+            entry = ram_symbol_dict[address]
+        except KeyError:
+            entry = ram_symbol_dict[address] = [None, {}]
+        if bit is None:
+            assert entry[0] is None, (address, name, entry)
+            entry[0] = name
+        else:
+            entry[1][int(bit)] = name
+    rom_symbol_dict.update(
+      (int(address, 0), name) for address, name in chip['rom'].iteritems()
+    )
+    entry_stack.extend(rom_symbol_dict)
+    comment_dict.update(
+      (int(address, 0), comment)
+      for address, comment in chip['comment'].iteritems()
+    )
+    disassembled_dict = method_dict[args.method](args.input.read)
+    write('.DATA\n')
+    for address, (name, bit_dict) in sorted(ram_symbol_dict.iteritems()):
+        if address >= 0x80:
+            # Register & bits definitions are supposed to be alreayd known to
+            # assembler.
+            break
+        if name is not None:
+            write('%s\tEQU\t0x%02x\n' % (name, address))
+        for bit_number, bit_name in sorted(bit_dict.iteritems()):
+            if bit_name is not None:
+                write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
+    write('.CODE\n')
+    next_key = None
+    for key in sorted(disassembled_dict):
+        disassembled = disassembled_dict[key]
+        if key != next_key:
+            write('ORG 0x%04x\n' % key)
+        next_key = key + 1
+        if key in rom_symbol_dict:
+            write(rom_symbol_dict[key] + ': ;')
+            if key in caller_dict:
+                write(' Called from ' + ', '.join(
+                    rom_symbol_dict.get(x, '%04x' % x)
+                    for x in sorted(caller_dict.pop(key))
+                ))
+            if key in jumper_dict:
+                write(' Jumped from ' + ', '.join(
+                    rom_symbol_dict.get(x, '%04x' % x)
+                    for x in sorted(jumper_dict.pop(key))
+                ))
+            write('\n')
+        else:
+            assert key not in caller_dict, key
+            assert key not in jumper_dict, key
+        write('\t' + disassembled)
+        if key in comment_dict:
+            write('; ' + comment_dict[key])
+        write('\n')
+    if caller_dict:
+        write('; Unknown calls:\n')
+        for address, caller_list in caller_dict.iteritems():
+            write('ORG 0x%04x\n' % address)
+            write(
+                rom_symbol_dict[address] + ': ; Called from ' +
+                ', '.join('%04x' % x for x in caller_list) + '\n'
+            )
+            write('\tJMP\t' + rom_symbol_dict[address] + '\n')
+    if jumper_dict:
+        write('; Unknown jumps:\n')
+        for address, jumper_list in jumper_dict.iteritems():
+            write('ORG 0x%04x\n' % address)
+            write(
+                rom_symbol_dict[address] + ': ; Jumped from ' +
+                ', '.join('%04x' % x for x in jumper_list) + '\n'
+            )
+            write('\tJMP\t' + rom_symbol_dict[address] + '\n')
+    write('ENDP\n')
+
+if __name__ == '__main__':
+    main()
