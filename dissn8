@@ -292,7 +292,7 @@ def main():
     parser.add_argument('-o', '--output', type=argparse.FileType('w'),
         default=sys.stdout, help='Path to write assembly code to, or - '
             'for stdout (default).')
-    parser.add_argument('input', type=argparse.FileType('r'), nargs='?',
+    parser.add_argument('input', type=argparse.FileType('rb'), nargs='?',
         default=sys.stdin, help='Path of binary rom image file to '
             'disassemble, or - for stdin (default).')
     args = parser.parse_args()
