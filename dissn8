@@ -325,17 +325,16 @@ def main():
         chip_config.readfp(chip_file)
     chip = {}
     for section_name in chip_config.sections():
-        chip[section_name] = dict(chip_config.items(section_name))
+        chip[section_name] = section = dict(chip_config.items(section_name))
         if section_name.startswith('ram'):
             if section_name.startswith('ram@'):
                 _, ram_range = section_name.split('@')
                 start, stop = ram_range.split('-')
-                start = int(start, 0)
-                stop = int(stop, 0)
             else:
-                start = int(chip['chip']['ram_start'], 0)
-                stop = int(chip['chip']['ram_stop'], 0)
-            ram_range_symbol_list.append([start, stop, chip[section_name]])
+                assert section_name == 'ram', repr(section_name)
+                start = chip['chip']['rom_start']
+                stop = chip['chip']['rom_stop']
+            ram_range_symbol_list.append([int(start, 0), int(stop, 0), section])
     # Shorter ranges first, overriding larger maps
     ram_range_symbol_list.sort(key=lambda x: x[1] - x[0])
     # chip name must be set
