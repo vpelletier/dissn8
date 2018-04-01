@@ -331,12 +331,12 @@ def main():
         else:
             entry[1][int(bit)] = name
     rom_symbol_dict.update(
-      (int(address, 0), name) for address, name in chip['rom'].iteritems()
+        (int(address, 0), name) for address, name in chip['rom'].iteritems()
     )
     entry_stack.extend(rom_symbol_dict)
     comment_dict.update(
-      (int(address, 0), comment)
-      for address, comment in chip['comment'].iteritems()
+        (int(address, 0), comment)
+        for address, comment in chip['comment'].iteritems()
     )
     disassembled_dict = method_dict[args.method](args.input.read)
     write('.DATA\n')
