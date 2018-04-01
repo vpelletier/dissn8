@@ -40,6 +40,20 @@ IMM_SPACE = 3    # Operand is immediate value
 caller_dict = defaultdict(list)
 jumper_dict = defaultdict(list)
 
+def expandRange(value):
+    if not value:
+        return {}
+    return {
+        item
+        for boundary_list in (
+            span.split("-") for span in value.split(",")
+        )
+        for item in xrange(
+            int(boundary_list[0].strip(), 0),
+            int(boundary_list[-1].strip(), 0) + 1,
+        )
+    }
+
 def asPrintable(value):
     if 0x20 <= value < 0x7f:
         return chr(value)
@@ -306,6 +320,8 @@ def main():
         chip[section_name] = dict(chip_config.items(section_name))
     # chip name must be set
     write('CHIP\t' + chip['chip']['name'] + '\n')
+    ram_reserved_set = expandRange(chip['ram'].pop('reserved', ''))
+    rom_reserved_set = expandRange(chip['rom'].pop('reserved', ''))
     # Note: only look for duplicate ram symbols, not rom.
     reverse_dict = {}
     for address, name in chip['ram'].iteritems():
@@ -338,13 +354,13 @@ def main():
         (int(address, 0), comment)
         for address, comment in chip['comment'].iteritems()
     )
+    for reserved in rom_reserved_set:
+        comment_dict.setdefault(reserved, 'Reserved')
     disassembled_dict = method_dict[args.method](args.input.read)
     write('.DATA\n')
     for address, (name, bit_dict) in sorted(ram_symbol_dict.iteritems()):
-        if address >= 0x80:
-            # Register & bits definitions are supposed to be alreayd known to
-            # assembler.
-            break
+        if address in ram_reserved_set:
+            continue
         if name is not None:
             write('%s\tEQU\t0x%02x\n' % (name, address))
         for bit_number, bit_name in sorted(bit_dict.iteritems()):
@@ -355,6 +371,8 @@ def main():
     for key in sorted(disassembled_dict):
         disassembled = disassembled_dict[key]
         if key != next_key:
+            if key in rom_reserved_set:
+                write(';')
             write('ORG 0x%04x\n' % key)
         next_key = key + 1
         if key in rom_symbol_dict:
@@ -373,6 +391,8 @@ def main():
         else:
             assert key not in caller_dict, key
             assert key not in jumper_dict, key
+        if key in rom_reserved_set:
+            write(';')
         write('\t' + disassembled)
         if key in comment_dict:
             write('; ' + comment_dict[key])
