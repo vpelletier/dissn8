@@ -320,8 +320,8 @@ def main():
         chip[section_name] = dict(chip_config.items(section_name))
     # chip name must be set
     write('CHIP\t' + chip['chip']['name'] + '\n')
-    ram_reserved_set = expandRange(chip['ram'].pop('reserved', ''))
-    rom_reserved_set = expandRange(chip['rom'].pop('reserved', ''))
+    ram_reserved_set = expandRange(chip['chip'].get('ram_reserved', ''))
+    rom_reserved_set = expandRange(chip['chip'].get('rom_reserved', ''))
     # Note: only look for duplicate ram symbols, not rom.
     reverse_dict = {}
     for address, name in chip['ram'].iteritems():
