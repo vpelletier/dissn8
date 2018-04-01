@@ -39,6 +39,7 @@ IMM_SPACE = 3    # Operand is immediate value
 
 caller_dict = defaultdict(list)
 jumper_dict = defaultdict(list)
+missing_ram_symbol_dict = defaultdict(list)
 
 def expandRange(value):
     if not value:
@@ -208,6 +209,8 @@ def disassemble(address, instruction):
                     symbol = bit_symbol
         if symbol is None:
             symbol = operand_fmt % operand
+            if opspace in (ZRO_SPACE, RAM_SPACE):
+                missing_ram_symbol_dict[symbol].append(address)
         opcode += '\t' + caption % symbol
     return opcode
 
@@ -391,6 +394,10 @@ def main():
         for bit_number, bit_name_list in sorted(flat_bit_dict.iteritems()):
             for bit_name in bit_name_list:
                 write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
+    if missing_ram_symbol_dict:
+        write('; Missing ram symbols and list of users\n')
+        for address, caller_list in sorted(missing_ram_symbol_dict.iteritems()):
+            write('; %s: %s\n' % (address, ', '.join('0x%04x' % x for x in sorted(caller_list))))
     write('.CODE\n')
     next_key = None
     for key in sorted(disassembled_dict):
