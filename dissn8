@@ -25,8 +25,8 @@ import itertools
 from struct import unpack
 import sys
 
-default_symbol = (None, {})
-ram_symbol_dict = {}
+DEFAULT_SYMBOL = (None, {})
+ram_range_symbol_list = []
 rom_symbol_dict = {}
 entry_stack = []
 comment_dict = {}
@@ -189,7 +189,12 @@ def disassemble(address, instruction):
             operand_fmt = '#0x%02x'
             assert not is_bit
         else: # ZRO & RAM
-            symbol, bit_dict = ram_symbol_dict.get(operand, default_symbol)
+            for start, stop, ram_symbol_dict in ram_range_symbol_list:
+                if start <= address <= stop and operand in ram_symbol_dict:
+                    symbol, bit_dict = ram_symbol_dict[operand]
+                    break
+            else:
+                symbol, bit_dict = DEFAULT_SYMBOL
             operand_fmt = '0x%02x'
             if is_bit:
                 bit_address = bincode & 0x7
@@ -318,34 +323,54 @@ def main():
     chip = {}
     for section_name in chip_config.sections():
         chip[section_name] = dict(chip_config.items(section_name))
+        if section_name.startswith('ram'):
+            if section_name.startswith('ram@'):
+                _, ram_range = section_name.split('@')
+                start, stop = ram_range.split('-')
+                start = int(start, 0)
+                stop = int(stop, 0)
+            else:
+                start = int(chip['chip']['ram_start'], 0)
+                stop = int(chip['chip']['ram_stop'], 0)
+            ram_range_symbol_list.append([start, stop, chip[section_name]])
+    # Shorter ranges first, overriding larger maps
+    ram_range_symbol_list.sort(key=lambda x: x[1] - x[0])
     # chip name must be set
     write('CHIP\t' + chip['chip']['name'] + '\n')
     ram_reserved_set = expandRange(chip['chip'].get('ram_reserved', ''))
     rom_reserved_set = expandRange(chip['chip'].get('rom_reserved', ''))
     # Note: only look for duplicate ram symbols, not rom.
+    flat_ram_symbol_dict = defaultdict(lambda: ([], defaultdict(list)))
     reverse_dict = {}
-    for address, name in chip['ram'].iteritems():
-        if name in reverse_dict:
-            raise ValueError(
-                'Duplicate name: %r for addresses %r and %r' % (
-                    name, reverse_dict[name], address,
+    for ram_range_symbol_entry in ram_range_symbol_list:
+        _, _, ram_symbol_dict = ram_range_symbol_entry
+        ram_range_symbol_entry[2] = new_ram_symbol_dict = {}
+        for address, name in ram_symbol_dict.iteritems():
+            if reverse_dict.get(name, address) != address:
+                raise ValueError(
+                    'Name %r is used for different addresses: %r and %r' % (
+                        name, reverse_dict[name], address,
+                    )
                 )
-            )
-        reverse_dict[name] = address
-        if '.' in address:
-            address, bit = address.split('.')
-        else:
-            bit = None
-        address = int(address, 0)
-        try:
-            entry = ram_symbol_dict[address]
-        except KeyError:
-            entry = ram_symbol_dict[address] = [None, {}]
-        if bit is None:
-            assert entry[0] is None, (address, name, entry)
-            entry[0] = name
-        else:
-            entry[1][int(bit)] = name
+            reverse_dict[name] = address
+            if '.' in address:
+                address, bit = address.split('.')
+            else:
+                bit = None
+            address = int(address, 0)
+            flat_name_list, flat_bit_dict = flat_ram_symbol_dict[address]
+            try:
+                entry = new_ram_symbol_dict[address]
+            except KeyError:
+                entry = new_ram_symbol_dict[address] = [None, {}]
+            if bit is None:
+                assert entry[0] is None, (address, name, entry)
+                entry[0] = name
+                flat_name_list.append(name)
+            else:
+                bit = int(bit)
+                entry[1][bit] = name
+                flat_bit_dict[bit].append(name)
     rom_symbol_dict.update(
         (int(address, 0), name) for address, name in chip['rom'].iteritems()
     )
@@ -358,13 +383,13 @@ def main():
         comment_dict.setdefault(reserved, 'Reserved')
     disassembled_dict = method_dict[args.method](args.input.read)
     write('.DATA\n')
-    for address, (name, bit_dict) in sorted(ram_symbol_dict.iteritems()):
+    for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.iteritems()):
         if address in ram_reserved_set:
             continue
-        if name is not None:
+        for name in flat_name_list:
             write('%s\tEQU\t0x%02x\n' % (name, address))
-        for bit_number, bit_name in sorted(bit_dict.iteritems()):
-            if bit_name is not None:
+        for bit_number, bit_name_list in sorted(flat_bit_dict.iteritems()):
+            for bit_name in bit_name_list:
                 write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
     write('.CODE\n')
     next_key = None
