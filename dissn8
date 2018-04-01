@@ -399,6 +399,8 @@ def main():
             if key in rom_reserved_set:
                 write(';')
             write('ORG 0x%04x\n' % key)
+        if not (key & 0xf):
+            write('; 0x%04x\n' % key)
         next_key = key + 1
         if key in rom_symbol_dict:
             write(rom_symbol_dict[key] + ': ;')
