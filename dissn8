@@ -333,7 +333,7 @@ def main():
                 _, ram_range = section_name.split('@')
                 start, stop = ram_range.split('-')
             else:
-                assert section_name == 'ram', repr(section_name)
+                assert section_name in ('ram', 'ram-reserved'), repr(section_name)
                 start = chip['chip']['rom_start']
                 stop = chip['chip']['rom_stop']
             ram_range_symbol_list.append([int(start, 0), int(stop, 0), section])
@@ -341,7 +341,6 @@ def main():
     ram_range_symbol_list.sort(key=lambda x: x[1] - x[0])
     # chip name must be set
     write('CHIP\t' + chip['chip']['name'] + '\n')
-    ram_reserved_set = expandRange(chip['chip'].get('ram_reserved', ''))
     rom_reserved_set = expandRange(chip['chip'].get('rom_reserved', ''))
     # Note: only look for duplicate ram symbols, not rom.
     flat_ram_symbol_dict = defaultdict(lambda: ([], defaultdict(list)))
@@ -375,6 +374,7 @@ def main():
                 bit = int(bit)
                 entry[1][bit] = name
                 flat_bit_dict[bit].append(name)
+    ram_reserved_name_set = {x for x in chip.get('ram-reserved', {}).itervalues()}
     rom_symbol_dict.update(
         (int(address, 0), name) for address, name in chip['rom'].iteritems()
     )
@@ -391,12 +391,14 @@ def main():
     disassembled_dict = method_dict[args.method](reader)
     write('.DATA\n')
     for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.iteritems()):
-        if address in ram_reserved_set:
-            continue
         for name in flat_name_list:
+            if name in ram_reserved_name_set:
+                continue
             write('%s\tEQU\t0x%02x\n' % (name, address))
         for bit_number, bit_name_list in sorted(flat_bit_dict.iteritems()):
             for bit_name in bit_name_list:
+                if bit_name in ram_reserved_name_set:
+                    continue
                 write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
     if missing_ram_symbol_dict:
         write('; Missing ram symbols and list of users\n')
