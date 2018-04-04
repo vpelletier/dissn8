@@ -351,13 +351,19 @@ def main():
         _, _, ram_symbol_dict = ram_range_symbol_entry
         ram_range_symbol_entry[2] = new_ram_symbol_dict = {}
         for address, name in ram_symbol_dict.iteritems():
-            if reverse_dict.get(name, address) != address:
-                raise ValueError(
-                    'Name %r is used for different addresses: %r and %r' % (
-                        name, reverse_dict[name], address,
+            if name:
+                if reverse_dict.get(name, address) != address:
+                    raise ValueError(
+                        'Name %r is used for different addresses: %r and %r' % (
+                            name, reverse_dict[name], address,
+                        )
                     )
-                )
-            reverse_dict[name] = address
+                reverse_dict[name] = address
+            else:
+                # To un-define a defined symbol, by giving an empty name.
+                # Ex: to override register names over a piece of code using
+                # non-zero bank. XXX: B0MOV will not properly resolve
+                name = None
             if '.' in address:
                 address, bit = address.split('.')
             else:
