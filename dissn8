@@ -427,12 +427,12 @@ def main():
             write(rom_symbol_dict[key] + ': ;')
             if key in caller_dict:
                 write(' Called from ' + ', '.join(
-                    rom_symbol_dict.get(x, '%04x' % x)
+                    '0x%04x' % x
                     for x in sorted(caller_dict.pop(key))
                 ))
             if key in jumper_dict:
                 write(' Jumped from ' + ', '.join(
-                    rom_symbol_dict.get(x, '%04x' % x)
+                    '0x%04x' % x
                     for x in sorted(jumper_dict.pop(key))
                 ))
             write('\n')
