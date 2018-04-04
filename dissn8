@@ -25,7 +25,6 @@ import itertools
 from struct import unpack
 import sys
 
-DEFAULT_SYMBOL = (None, {})
 ram_range_symbol_list = []
 rom_symbol_dict = {}
 entry_stack = []
@@ -190,12 +189,15 @@ def disassemble(address, instruction):
             operand_fmt = '#0x%02x'
             assert not is_bit
         else: # ZRO & RAM
+            bit_dict = {}
+            symbol = None
             for start, stop, ram_symbol_dict in ram_range_symbol_list:
                 if start <= address <= stop and operand in ram_symbol_dict:
-                    symbol, bit_dict = ram_symbol_dict[operand]
-                    break
-            else:
-                symbol, bit_dict = DEFAULT_SYMBOL
+                    range_symbol, range_bit_dict = ram_symbol_dict[operand]
+                    if symbol is None:
+                        symbol = range_symbol
+                    for bit_address, bit_symbol in range_bit_dict.iteritems():
+                        bit_dict.setdefault(bit_address, bit_symbol)
             operand_fmt = '0x%02x'
             if is_bit:
                 bit_address = bincode & 0x7
