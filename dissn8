@@ -311,6 +311,8 @@ def main():
         help='Disassembly strategy: "walker" follows code path to avoid '
             'disassembling data, "systematic" just disassembes all memory. '
             'Default: %(default)s.')
+    parser.add_argument('-H', '--skip-header', action='store_true',
+        help='Skip the SH8 header used by SN8 C Studio for object files')
     parser.add_argument('-o', '--output', type=argparse.FileType('w'),
         default=sys.stdout, help='Path to write assembly code to, or - '
             'for stdout (default).')
@@ -383,7 +385,10 @@ def main():
     )
     for reserved in rom_reserved_set:
         comment_dict.setdefault(reserved, 'Reserved')
-    disassembled_dict = method_dict[args.method](args.input.read)
+    reader = args.input.read
+    if args.skip_header:
+        reader(88)
+    disassembled_dict = method_dict[args.method](reader)
     write('.DATA\n')
     for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.iteritems()):
         if address in ram_reserved_set:
