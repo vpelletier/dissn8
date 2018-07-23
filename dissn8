@@ -219,7 +219,7 @@ def systematic(read):
     rom = {}
     for address in itertools.count():
         instruction = read(2)
-        if not instruction:
+        if len(instruction) != 2:
             break
         instruction = unpack('<H', instruction)[0]
         try:
@@ -238,7 +238,7 @@ def walker(read):
     rom = {}
     for address in itertools.count():
         instruction = read(2)
-        if not instruction:
+        if len(instruction) != 2:
             break
         rom[address], = unpack('<H', instruction)
     while entry_stack:
