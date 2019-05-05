@@ -295,6 +295,19 @@ def walker(read):
             chunk_address += count
     return disassembled
 
+def tabstop(prefix, position, suffix, tabwidth=8):
+    """
+    Returns <prefix> and <suffix> so that <suffix> starts at tabstop
+    <position>.
+    """
+    tabcount = max(0, position - len(prefix.expandtabs(tabwidth)) // tabwidth)
+    return prefix + (
+      '\t' * tabcount
+      if tabcount else
+      ' '
+    ) + suffix
+COMMENT_POSITION = 5 # 5th tab
+
 def main():
     method_dict = {
         'walker': walker,
@@ -421,10 +434,10 @@ def main():
                 write(';')
             write('ORG 0x%04x\n' % key)
         if not (key & 0xf):
-            write('; 0x%04x\n' % key)
+            write(tabstop('', COMMENT_POSITION, '; 0x%04x\n' % key))
         next_key = key + 1
         if key in rom_symbol_dict:
-            write(rom_symbol_dict[key] + ': ;')
+            write(tabstop(rom_symbol_dict[key] + ':', COMMENT_POSITION, ';'))
             if key in caller_dict:
                 write(' Called from ' + ', '.join(
                     '0x%04x' % x
@@ -439,12 +452,10 @@ def main():
         else:
             assert key not in caller_dict, key
             assert key not in jumper_dict, key
-        if key in rom_reserved_set:
-            write(';')
-        write('\t' + disassembled)
+        line = (';' if key in rom_reserved_set else '') + '\t' + disassembled
         if key in comment_dict:
-            write('; ' + comment_dict[key])
-        write('\n')
+            line = tabstop(line, COMMENT_POSITION, '; ' + comment_dict[key])
+        write(line + '\n')
     if caller_dict:
         write('; Unknown calls:\n')
         for address, caller_list in caller_dict.iteritems():
