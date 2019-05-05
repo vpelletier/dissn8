@@ -340,6 +340,11 @@ def getFunctionNameAndOffset(address):
     function_name = line_ownership_dict[address]
     return '%s%#+x' % (function_name, address - function_dict[function_name])
 
+class CasedSafeConfigParser(ConfigParser.SafeConfigParser):
+    @staticmethod
+    def optionxform(optionstr):
+        return optionstr
+
 def main():
     method_dict = {
         'walker': walker,
@@ -369,7 +374,7 @@ def main():
     args = parser.parse_args()
     write = args.output.write
 
-    chip_config = ConfigParser.SafeConfigParser()
+    chip_config = CasedSafeConfigParser()
     for chip_file in args.chip:
         chip_config.readfp(chip_file)
     chip = {}
