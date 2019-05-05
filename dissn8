@@ -234,14 +234,9 @@ def disassemble(address, instruction, function):
         opcode += '\t' + caption % symbol
     return opcode
 
-def systematic(read):
+def systematic(rom):
     disassembled = {}
-    rom = {}
-    for address in xrange():
-        instruction = read(2)
-        if len(instruction) != 2:
-            break
-        instruction = unpack('<H', instruction)[0]
+    for address, instruction in rom.iteritems():
         try:
             opcode = disassemble(address, instruction, None)
         except KeyError:
@@ -253,14 +248,8 @@ def systematic(read):
         disassembled[address] = opcode
     return disassembled
 
-def walker(read):
+def walker(rom):
     disassembled = {}
-    rom = {}
-    for address in itertools.count():
-        instruction = read(2)
-        if len(instruction) != 2:
-            break
-        rom[address], = unpack('<H', instruction)
     while entry_stack:
         address, function = entry_stack.pop()
         try:
@@ -450,10 +439,44 @@ def main():
     )
     for reserved in rom_reserved_set:
         comment_dict.setdefault(reserved, 'Reserved')
-    reader = args.input.read
+    read = args.input.read
     if args.skip_header:
-        reader(88)
-    disassembled_dict = method_dict[args.method](reader)
+        read(88)
+    rom = {}
+    rom_start = int(chip['chip']['rom_start'], 0)
+    rom_stop = int(chip['chip']['rom_stop'], 0)
+    for address in xrange(
+        int(chip['chip']['rom_start'], 0),
+        int(chip['chip']['rom_stop'], 0) + 1,
+    ):
+        instruction = read(2)
+        if len(instruction) != 2:
+            break
+        rom[address], = unpack('<H', instruction)
+    if read(1):
+        print('Ignoring data past end of ROM')
+    write('//{{SONIX_CODE_OPTION\n')
+    for option_name, option_definition in chip['code-option'].iteritems():
+        address, mask, value_names = option_definition.split(' ', 2)
+        mask = int(mask, 0)
+        assert mask
+        try:
+            option_value = rom[int(address, 0)] & mask
+        except KeyError:
+            continue
+        while not mask & 1:
+            mask >>= 1
+            option_value >>= 1
+        write(tabstop(
+            '\t.Code_Option\t' + option_name,
+            5,
+            '"' + {
+                int(value, 0): name
+                for value, name in (x.split('=') for x in value_names.split(' '))
+            }[option_value] + '"\n',
+        ))
+    write('//}}SONIX_CODE_OPTION\n')
+    disassembled_dict = method_dict[args.method](rom)
     write('.DATA\n')
     for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.iteritems()):
         for name in flat_name_list:
