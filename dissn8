@@ -18,6 +18,7 @@
 FOR INTERACTIVE USE ONLY !
 This is not a python module, do not import it - run it.
 """
+from __future__ import print_function
 import argparse
 from collections import defaultdict
 import ConfigParser
@@ -39,6 +40,8 @@ IMM_SPACE = 3    # Operand is immediate value
 caller_dict = defaultdict(list)
 jumper_dict = defaultdict(list)
 missing_ram_symbol_dict = defaultdict(list)
+function_dict = {}
+line_ownership_dict = {}
 
 def expandRange(value):
     if not value:
@@ -59,41 +62,56 @@ def asPrintable(value):
         return chr(value)
     return '.'
 
-def NONXT(addr, operand):
+def NONXT(addr, operand, function):
     """
     There is no fixed next-instruction address (RET & RETI).
     """
     pass
-def NEXTI(addr, operand):
+def NEXTI(addr, operand, function):
     """
     Always execute next instruction (normal instructions).
     """
-    entry_stack.append(addr + 1)
-def BRNCH(addr, operand):
+    entry_stack.append((addr + 1, function))
+def BRNCH(addr, operand, function):
     """
     Execute next instruction or the one after that (conditional branches).
     """
-    entry_stack.append(addr + 1)
-    entry_stack.append(addr + 2)
-def JUMPI(addr, operand):
+    entry_stack.append((addr + 1, function))
+    entry_stack.append((addr + 2, function))
+def JUMPI(addr, operand, function):
     """
     Jump to some far address (unconditional branches).
     Keep track of what jumped to where and declare a label if missing.
     """
-    entry_stack.append(operand)
+    entry_stack.append((operand, function))
     jumper_dict[operand].append(addr)
     if operand not in rom_symbol_dict:
-        rom_symbol_dict[operand] = 'label_%04x' % operand
-def CALLI(addr, operand):
+        if function is None:
+            offset = -1 # systematic disassembler, force absolute labels
+        else:
+            offset = operand - function_dict[function]
+        rom_symbol_dict[operand] = (
+            '%s_%04x' % (function, offset)
+            if offset >= 0 else
+            '_label_%04x' % operand
+        )
+def CALLI(addr, operand, function):
     """
     Call some address (call instructions).
     Keep track of what called where and declare a label if missing.
     """
-    entry_stack.append(operand)
-    entry_stack.append(addr + 1)
+    callee_name = rom_symbol_dict.setdefault(operand, 'func_%04x' % operand)
+    if callee_name in function_dict:
+        assert function_dict[callee_name] == operand, (
+            callee_name,
+            function_dict[operand],
+            operand,
+        )
+    else:
+        function_dict[callee_name] = operand
+    entry_stack.append((operand, callee_name))
+    entry_stack.append((addr + 1, function))
     caller_dict[operand].append(addr)
-    if operand not in rom_symbol_dict:
-        rom_symbol_dict[operand] = 'func_%04x' % operand
 
 opcode_dict = {
     0x00: (0x0000, NUL_SPACE, NEXTI, 'NOP',    None),
@@ -159,7 +177,7 @@ opcode_dict = {
     0xc0: (0x3fff, ROM_SPACE, CALLI, 'CALL',   '%s'),
 }
 
-def disassemble(address, instruction):
+def disassemble(address, instruction, function):
     bincode = instruction >> 8
     if bincode >= 0x80:
         opcode_key = bincode & 0xc0
@@ -176,10 +194,10 @@ def disassemble(address, instruction):
         NEXTI(address, None)
         return 'DW\t0x%04x\t; ILLEGAL OPCODE' % (instruction, )
     if opspace == NUL_SPACE:
-        jump_action(address, None)
+        jump_action(address, None, function)
     else:
         operand = instruction & mask
-        jump_action(address, operand)
+        jump_action(address, operand, function)
         if opspace == ROM_SPACE:
             symbol = rom_symbol_dict.get(operand)
             operand_fmt = '0x%04x'
@@ -219,13 +237,13 @@ def disassemble(address, instruction):
 def systematic(read):
     disassembled = {}
     rom = {}
-    for address in itertools.count():
+    for address in xrange():
         instruction = read(2)
         if len(instruction) != 2:
             break
         instruction = unpack('<H', instruction)[0]
         try:
-            opcode = disassemble(address, instruction)
+            opcode = disassemble(address, instruction, None)
         except KeyError:
             opcode = 'DW\t0x%04x\t; %s%s' % (
                 instruction,
@@ -244,11 +262,21 @@ def walker(read):
             break
         rom[address], = unpack('<H', instruction)
     while entry_stack:
-        address = entry_stack.pop()
+        address, function = entry_stack.pop()
         try:
             instruction = rom.pop(address)
         except KeyError:
             continue # Already disassembled
+        line_owner = line_ownership_dict.setdefault(address, function)
+        if line_owner != function:
+            print(
+                'Line ownership disagreement: 0x%04x claimed by %r and %r' % (
+                    address,
+                    line_ownership_dict[address],
+                    function,
+                ),
+            )
+            function = line_owner
         if instruction in (
                     0x03ce, # B0ADD PCL, A
                     0x13ce, # ADD   PCL, A
@@ -263,10 +291,10 @@ def walker(read):
                 if sub_address in disassembled:
                     continue
                 if rom[sub_address] & 0x8000 or rom[sub_address] == 0x0000:
-                    entry_stack.append(sub_address)
+                    entry_stack.append((sub_address, function))
                 else:
                     break
-        disassembled[address] = disassemble(address, instruction)
+        disassembled[address] = disassemble(address, instruction, function)
     # Convert any disassembled word into a data word.
     # Agglutinate non-disassembled portions to know their length.
     # Ignore runs of nulls longer than 6 words (12 bytes), for readability.
@@ -307,6 +335,10 @@ def tabstop(prefix, position, suffix, tabwidth=8):
       ' '
     ) + suffix
 COMMENT_POSITION = 5 # 5th tab
+
+def getFunctionNameAndOffset(address):
+    function_name = line_ownership_dict[address]
+    return '%s%#+x' % (function_name, address - function_dict[function_name])
 
 def main():
     method_dict = {
@@ -399,7 +431,14 @@ def main():
     rom_symbol_dict.update(
         (int(address, 0), name) for address, name in chip['rom'].iteritems()
     )
-    entry_stack.extend(rom_symbol_dict)
+    function_addr_name_list = [
+        (int(address, 0), name)
+        for address, name in chip['callee'].iteritems()
+    ]
+    rom_symbol_dict.update(function_addr_name_list)
+    line_ownership_dict.update(function_addr_name_list)
+    function_dict.update((y, x) for x, y in function_addr_name_list)
+    entry_stack.extend(line_ownership_dict.iteritems())
     comment_dict.update(
         (int(address, 0), comment)
         for address, comment in chip['comment'].iteritems()
@@ -423,8 +462,10 @@ def main():
                 write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
     if missing_ram_symbol_dict:
         write('; Missing ram symbols and list of users\n')
-        for address, caller_list in sorted(missing_ram_symbol_dict.iteritems()):
-            write('; %s: %s\n' % (address, ', '.join('0x%04x' % x for x in sorted(caller_list))))
+        for address, accessor_list in sorted(missing_ram_symbol_dict.iteritems()):
+            write('; %s:\n' % (address, ) )
+            for address in sorted(accessor_list):
+                write(';\t' + getFunctionNameAndOffset(address) + '\n')
     write('.CODE\n')
     next_key = None
     for key in sorted(disassembled_dict):
@@ -440,12 +481,12 @@ def main():
             write(tabstop(rom_symbol_dict[key] + ':', COMMENT_POSITION, ';'))
             if key in caller_dict:
                 write(' Called from ' + ', '.join(
-                    '0x%04x' % x
+                    getFunctionNameAndOffset(x)
                     for x in sorted(caller_dict.pop(key))
                 ))
             if key in jumper_dict:
                 write(' Jumped from ' + ', '.join(
-                    '0x%04x' % x
+                    getFunctionNameAndOffset(x)
                     for x in sorted(jumper_dict.pop(key))
                 ))
             write('\n')
@@ -462,7 +503,10 @@ def main():
             write('ORG 0x%04x\n' % address)
             write(
                 rom_symbol_dict[address] + ': ; Called from ' +
-                ', '.join('%04x' % x for x in caller_list) + '\n'
+                ', '.join(
+                    getFunctionNameAndOffset(x)
+                    for x in caller_list
+                ) + '\n'
             )
             write('\tJMP\t' + rom_symbol_dict[address] + '\n')
     if jumper_dict:
@@ -471,7 +515,10 @@ def main():
             write('ORG 0x%04x\n' % address)
             write(
                 rom_symbol_dict[address] + ': ; Jumped from ' +
-                ', '.join('%04x' % x for x in jumper_list) + '\n'
+                ', '.join(
+                    getFunctionNameAndOffset(x)
+                    for x in jumper_list
+                ) + '\n'
             )
             write('\tJMP\t' + rom_symbol_dict[address] + '\n')
     write('ENDP\n')
