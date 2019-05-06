@@ -633,7 +633,7 @@ def main():
                     ))
             dot_file.write('}\n')
     else:
-        dot_addline = lambda x, y: None
+        dot_addline = lambda address, line, is_instruction=True: None
         dot_write = lambda: None
     for key in sorted(disassembled_dict):
         disassembled = disassembled_dict[key]
