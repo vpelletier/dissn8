@@ -614,6 +614,24 @@ def main():
                     if node_line_list:
                         writenode()
                     dot_file.write('}\n')
+        with open(os.path.join(dot_path, '_index.dot'), 'w') as dot_file:
+            dot_file.write('strict digraph {\nedge [fontname="Courier"]\nnode [shape="box",fontname="Courier"]\n')
+            for callee, caller_list in caller_dict.iteritems():
+                try:
+                    callee = line_ownership_dict[callee]
+                except KeyError:
+                    callee = 'func_%04x' % callee
+                callee = dot_quote(callee)
+                for caller in caller_list:
+                    try:
+                        caller = line_ownership_dict[caller]
+                    except KeyError:
+                        caller = '%#06x' % caller
+                    dot_file.write('%s->%s\n' % (
+                        dot_quote(caller),
+                        callee,
+                    ))
+            dot_file.write('}\n')
     else:
         dot_addline = lambda x, y: None
         dot_write = lambda: None
