@@ -550,6 +550,10 @@ def main():
         dot_path = os.path.splitext(args.input.name)[0]
         if not os.path.exists(dot_path):
           os.mkdir(dot_path)
+        def dot_escape(value):
+            return value.replace('\\', '\\\\').replace('"', '\\"')
+        def dot_quote(value):
+            return '"' + dot_escape(value) + '"'
         def dot_addline(address, line, is_instruction=True):
             try:
                 function_id = line_ownership_dict[address]
@@ -557,21 +561,20 @@ def main():
                 return
             dot_dict[function_id].append((
                 address,
-                (
+                dot_escape(
                     (
-                        ('%04x ' % address)
-                        if is_instruction else
-                        '     '
-                    ) + line
-                ).expandtabs(
-                ).replace('\\', '\\\\'
-                ).replace('"', '\\"'
+                        (
+                            ('%04x ' % address)
+                            if is_instruction else
+                            '     '
+                        ) + line
+                    ).expandtabs(),
                 ) + '\\l',
                 is_instruction,
             ))
         def dot_write():
             def writenode():
-                node_id = '"' + getFunctionNameAndOffset(node_base_address) + '"'
+                node_id = dot_quote(getFunctionNameAndOffset(node_base_address))
                 dot_file.write('%s[label="%s"]\n' % (
                     node_id,
                     ''.join(node_line_list)
@@ -592,7 +595,7 @@ def main():
                             node_id = writenode()
                             dot_file.write('%s->%s[color="black"]\n' % (
                                 node_id,
-                                '"' + getFunctionNameAndOffset(address) + '"',
+                                dot_quote(getFunctionNameAndOffset(address)),
                             ))
                             node_base_address = address if is_instruction else None
                         node_line_list.append(line)
@@ -602,7 +605,7 @@ def main():
                             for to_address, label, color in jump_dict[address]:
                                 dot_file.write('%s->%s[color="%s"' % (
                                     node_id,
-                                    '"' + getFunctionNameAndOffset(to_address) + '"',
+                                    dot_quote(getFunctionNameAndOffset(to_address)),
                                     color,
                                 ))
                                 if label:
