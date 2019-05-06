@@ -458,7 +458,7 @@ def main():
                 flat_bit_dict[bit].append(name)
     ram_reserved_name_set = {x for x in chip.get('ram-reserved', {}).itervalues()}
     rom_symbol_dict.update(
-        (int(address, 0), name) for address, name in chip['rom'].iteritems()
+        (int(address, 0), name) for address, name in chip.get('rom', {}).iteritems()
     )
     function_addr_name_list = [
         (int(address, 0), name)
