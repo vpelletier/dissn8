@@ -309,13 +309,23 @@ def walker(rom):
             # at the first unexpected instruction, meaning that the code
             # after the last entry will not be jumped to as part of the
             # table.
-            for sub_address in itertools.count(address + 1):
-                if sub_address in disassembled:
-                    continue
-                if rom[sub_address] & 0x8000 or rom[sub_address] == 0x0000:
-                    entry_stack.append((sub_address, function))
+            target_list = []
+            for a_value, sub_address in enumerate(itertools.count(address + 1)):
+                if sub_address in rom and (
+                    rom[sub_address] & 0x8000 or
+                    rom[sub_address] == 0x0000
+                ):
+                    target_list.append((
+                        sub_address,
+                        'A == %#04x' % a_value,
+                        'orange',
+                    ))
+                    if sub_address not in disassembled:
+                        entry_stack.append((sub_address, function))
                 else:
                     break
+            assert target_list
+            jump_dict[address] = tuple(target_list)
         disassembled[address] = disassemble(address, instruction, function)
     # Convert any disassembled word into a data word.
     # Agglutinate non-disassembled portions to know their length.
