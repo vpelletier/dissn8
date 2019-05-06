@@ -40,7 +40,7 @@ IMM_SPACE = 3    # Operand is immediate value
 
 caller_dict = defaultdict(list)
 jumper_dict = defaultdict(list)
-missing_ram_symbol_dict = defaultdict(list)
+ram_symbol_usage_dict = defaultdict(list)
 function_dict = {}
 line_ownership_dict = {}
 jump_dict = {}
@@ -246,8 +246,8 @@ def disassemble(address, instruction, function):
                     symbol = bit_symbol
         if symbol is None:
             symbol = operand_fmt % operand
-            if opspace in (ZRO_SPACE, RAM_SPACE):
-                missing_ram_symbol_dict[symbol].append((address, opmode))
+        if opspace in (ZRO_SPACE, RAM_SPACE):
+            ram_symbol_usage_dict[symbol].append((address, opmode))
         if jump_action is BRNCH:
             implicit_operand = branch_opcode_implicit_operand_dict[opcode_key]
             if implicit_operand == 'A':
@@ -533,9 +533,9 @@ def main():
                 if bit_name in ram_reserved_name_set:
                     continue
                 write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
-    if missing_ram_symbol_dict:
-        write('; Missing ram symbols and list of users\n')
-        for address, accessor_list in sorted(missing_ram_symbol_dict.iteritems()):
+    if ram_symbol_usage_dict:
+        write('; RAM address usage\n')
+        for address, accessor_list in sorted(ram_symbol_usage_dict.iteritems()):
             write('; %s:\n' % (address, ) )
             for address, mode in sorted(accessor_list):
                 write(';\t%s %s\n' % (
