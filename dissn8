@@ -23,6 +23,7 @@ import argparse
 from collections import defaultdict
 import ConfigParser
 import itertools
+import os
 from struct import unpack
 import sys
 
@@ -42,6 +43,7 @@ jumper_dict = defaultdict(list)
 missing_ram_symbol_dict = defaultdict(list)
 function_dict = {}
 line_ownership_dict = {}
+jump_dict = {}
 
 def expandRange(value):
     if not value:
@@ -177,6 +179,19 @@ opcode_dict = {
     0xc0: (0x3fff, ROM_SPACE, None, CALLI, 'CALL',   '%s'),
 }
 
+branch_opcode_implicit_operand_dict = {
+    0x06: 'A',
+    0x07: 'A',
+    0x15: '0',
+    0x16: '0',
+    0x25: '0',
+    0x26: '0',
+    0x50: '0',
+    0x58: '1',
+    0x70: '0',
+    0x78: '1',
+}
+
 def disassemble(address, instruction, function):
     bincode = instruction >> 8
     if bincode >= 0x80:
@@ -195,6 +210,8 @@ def disassemble(address, instruction, function):
         return 'DW\t0x%04x\t; ILLEGAL OPCODE' % (instruction, )
     if opspace == NUL_SPACE:
         jump_action(address, None, function)
+        if jump_action is NONXT:
+            jump_dict[address] = ()
     else:
         operand = instruction & mask
         jump_action(address, operand, function)
@@ -231,6 +248,22 @@ def disassemble(address, instruction, function):
             symbol = operand_fmt % operand
             if opspace in (ZRO_SPACE, RAM_SPACE):
                 missing_ram_symbol_dict[symbol].append((address, opmode))
+        if jump_action is BRNCH:
+            implicit_operand = branch_opcode_implicit_operand_dict[opcode_key]
+            if implicit_operand == 'A':
+                lhs = implicit_operand
+                rhs = symbol
+            else:
+                lhs = symbol
+                rhs = implicit_operand
+            jump_dict[address] = (
+                (address + 1, '%s != %s' % (lhs, rhs), 'red'),
+                (address + 2, '%s == %s' % (lhs, rhs), 'green'),
+            )
+        elif jump_action is JUMPI:
+            jump_dict[address] = (
+                (operand, None, 'black'),
+            )
         opcode += '\t' + caption % symbol
     return opcode
 
@@ -357,6 +390,8 @@ def main():
     parser.add_argument('-o', '--output', type=argparse.FileType('w'),
         default=sys.stdout, help='Path to write assembly code to, or - '
             'for stdout (default).')
+    parser.add_argument('--dot', action='store_true',
+        help='Write function graphs in dot format in <basename(input)> folder.')
     parser.add_argument('input', type=argparse.FileType('rb'), nargs='?',
         default=sys.stdin, help='Path of binary rom image file to '
             'disassemble, or - for stdin (default).')
@@ -499,6 +534,76 @@ def main():
                 ))
     write('.CODE\n')
     next_key = None
+    dot = args.dot
+    if dot:
+        dot_dict = defaultdict(list)
+        dot_path = os.path.splitext(args.input.name)[0]
+        if not os.path.exists(dot_path):
+          os.mkdir(dot_path)
+        def dot_addline(address, line, is_instruction=True):
+            try:
+                function_id = line_ownership_dict[address]
+            except KeyError:
+                return
+            dot_dict[function_id].append((
+                address,
+                (
+                    (
+                        ('%04x ' % address)
+                        if is_instruction else
+                        '     '
+                    ) + line
+                ).expandtabs(
+                ).replace('\\', '\\\\'
+                ).replace('"', '\\"'
+                ) + '\\l',
+                is_instruction,
+            ))
+        def dot_write():
+            def writenode():
+                node_id = '"' + getFunctionNameAndOffset(node_base_address) + '"'
+                dot_file.write('%s[label="%s"]\n' % (
+                    node_id,
+                    ''.join(node_line_list)
+                ))
+                del node_line_list[:]
+                return node_id
+            jumped_set = {x for y in jump_dict.itervalues() for x, _, _ in y}
+            for function, line_list in dot_dict.iteritems():
+                with open(os.path.join(dot_path, function + '.dot'), 'w') as dot_file:
+                    dot_file.write('strict digraph {\nedge [fontname="Courier"]\nnode [shape="box",fontname="Courier"]\n')
+                    node_line_list = []
+                    node_base_address = None
+                    for address, line, is_instruction in line_list:
+                        if node_base_address is None:
+                            if is_instruction:
+                                node_base_address = address
+                        elif address in jumped_set:
+                            node_id = writenode()
+                            dot_file.write('%s->%s[color="black"]\n' % (
+                                node_id,
+                                '"' + getFunctionNameAndOffset(address) + '"',
+                            ))
+                            node_base_address = address if is_instruction else None
+                        node_line_list.append(line)
+                        if is_instruction and address in jump_dict:
+                            node_id = writenode()
+                            node_base_address = None
+                            for to_address, label, color in jump_dict[address]:
+                                dot_file.write('%s->%s[color="%s"' % (
+                                    node_id,
+                                    '"' + getFunctionNameAndOffset(to_address) + '"',
+                                    color,
+                                ))
+                                if label:
+                                    dot_file.write(',label="%s"' % label)
+                                dot_file.write(']\n')
+                    if node_line_list:
+                        writenode()
+                    dot_file.write('}\n')
+    else:
+        dot_addline = lambda x, y: None
+        dot_write = lambda: None
     for key in sorted(disassembled_dict):
         disassembled = disassembled_dict[key]
         if key != next_key:
@@ -509,6 +614,7 @@ def main():
             write(tabstop('', COMMENT_POSITION, '; 0x%04x\n' % key))
         next_key = key + 1
         if key in rom_symbol_dict:
+            dot_addline(key, rom_symbol_dict[key] + ':', is_instruction=False)
             write(tabstop(rom_symbol_dict[key] + ':', COMMENT_POSITION, ';'))
             if key in caller_dict:
                 write(' Called from ' + ', '.join(
@@ -528,6 +634,8 @@ def main():
         if key in comment_dict:
             line = tabstop(line, COMMENT_POSITION, '; ' + comment_dict[key])
         write(line + '\n')
+        dot_addline(key, line)
+    dot_write()
     if caller_dict:
         write('; Unknown calls:\n')
         for address, caller_list in caller_dict.iteritems():
