@@ -603,6 +603,7 @@ def main():
                             node_id = writenode()
                             node_base_address = None
                             for to_address, label, color in jump_dict[address]:
+                                to_function = line_ownership_dict[to_address]
                                 dot_file.write('%s->%s[color="%s"' % (
                                     node_id,
                                     dot_quote(getFunctionNameAndOffset(to_address)),
@@ -611,6 +612,10 @@ def main():
                                 if label:
                                     dot_file.write(',label="%s"' % label)
                                 dot_file.write(']\n')
+                                if to_function != function:
+                                    dot_file.write('%s[shape="ellipse"]' % (
+                                        dot_quote(getFunctionNameAndOffset(to_address)),
+                                    ))
                     if node_line_list:
                         writenode()
                     dot_file.write('}\n')
