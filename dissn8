@@ -226,7 +226,7 @@ def disassemble(address, instruction, function):
         else: # ZRO & RAM
             bit_dict = {}
             symbol = None
-            for start, stop, ram_symbol_dict in ram_range_symbol_list:
+            for _, start, stop, ram_symbol_dict in ram_range_symbol_list:
                 if start <= address <= stop and operand in ram_symbol_dict:
                     range_symbol, range_bit_dict = ram_symbol_dict[operand]
                     if symbol is None:
@@ -415,6 +415,7 @@ def main():
     for section_name in chip_config.sections():
         chip[section_name] = section = dict(chip_config.items(section_name))
         if section_name.startswith('ram'):
+            priority = 0
             if section_name.startswith('ram@'):
                 _, ram_range = section_name.split('@')
                 start, stop = ram_range.split('-')
@@ -422,9 +423,12 @@ def main():
                 assert section_name in ('ram', 'ram-reserved'), repr(section_name)
                 start = chip['chip']['rom_start']
                 stop = chip['chip']['rom_stop']
-            ram_range_symbol_list.append([int(start, 0), int(stop, 0), section])
+                if section_name == 'ram-reserved':
+                    # Low priority, to allow overriding in [ram] section.
+                    priority = 1
+            ram_range_symbol_list.append([priority, int(start, 0), int(stop, 0), section])
     # Shorter ranges first, overriding larger maps
-    ram_range_symbol_list.sort(key=lambda x: x[1] - x[0])
+    ram_range_symbol_list.sort(key=lambda x: (x[0], x[2] - x[1]))
     # chip name must be set
     write('CHIP\t' + chip['chip']['name'] + '\n')
     rom_reserved_set = expandRange(chip['chip'].get('rom_reserved', ''))
@@ -432,8 +436,8 @@ def main():
     flat_ram_symbol_dict = defaultdict(lambda: ([], defaultdict(list)))
     reverse_dict = {}
     for ram_range_symbol_entry in ram_range_symbol_list:
-        _, _, ram_symbol_dict = ram_range_symbol_entry
-        ram_range_symbol_entry[2] = new_ram_symbol_dict = {}
+        _, _, _, ram_symbol_dict = ram_range_symbol_entry
+        ram_range_symbol_entry[3] = new_ram_symbol_dict = {}
         for address, name in ram_symbol_dict.iteritems():
             if name:
                 if reverse_dict.get(name, address) != address:
