@@ -206,7 +206,7 @@ def disassemble(address, instruction, function):
     try:
         mask, opspace, opmode, jump_action, opcode, caption = opcode_dict[opcode_key]
     except KeyError:
-        NEXTI(address, None)
+        NEXTI(address, None, None)
         return 'DW\t0x%04x\t; ILLEGAL OPCODE' % (instruction, )
     if opspace == NUL_SPACE:
         jump_action(address, None, function)
@@ -492,8 +492,6 @@ def main():
     if args.skip_header:
         read(88)
     rom = {}
-    rom_start = int(chip['chip']['rom_start'], 0)
-    rom_stop = int(chip['chip']['rom_stop'], 0)
     for address in xrange(
         int(chip['chip']['rom_start'], 0),
         int(chip['chip']['rom_stop'], 0) + 1,
@@ -540,7 +538,7 @@ def main():
     if ram_symbol_usage_dict:
         write('; RAM address usage\n')
         for address, accessor_list in sorted(ram_symbol_usage_dict.iteritems()):
-            write('; %s:\n' % (address, ) )
+            write('; %s:\n' % (address, ))
             for address, mode in sorted(accessor_list):
                 write(';\t%s %s\n' % (
                     mode,
@@ -553,7 +551,7 @@ def main():
         dot_dict = defaultdict(list)
         dot_path = os.path.splitext(args.input.name)[0]
         if not os.path.exists(dot_path):
-          os.mkdir(dot_path)
+            os.mkdir(dot_path)
         def dot_escape(value):
             return value.replace('\\', '\\\\').replace('"', '\\"')
         def dot_quote(value):
@@ -650,7 +648,7 @@ def main():
             if key in rom_reserved_set:
                 write(';')
             write('ORG 0x%04x\n' % key)
-        if not (key & 0xf):
+        if not key & 0xf:
             write(tabstop('', COMMENT_POSITION, '; 0x%04x\n' % key))
         next_key = key + 1
         if key in rom_symbol_dict:
