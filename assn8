@@ -1,0 +1,541 @@
+#!/usr/bin/env python
+# Copyright (C) 2019  Vincent Pelletier <plr.vincent@gmail.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+"""
+FOR INTERACTIVE USE ONLY !
+This is not a python module, do not import it - run it.
+"""
+import argparse
+import ast
+from collections import defaultdict
+from struct import pack
+import sys
+import warnings
+from ply.yacc import yacc
+from ply.lex import lex
+from libsn8 import (
+    opcode_dict,
+    BitAddress, Address, Immediate, NoOperand,
+    RAM_SPACE, ROM_SPACE,
+    parseConfig,
+)
+
+DATAWORD_TOKEN = 'DATAWORD'
+DATABYTE_TOKEN = 'DATABYTE'
+INSTRUCTION_TOKEN = 'INSTRUCTION'
+NUMBER_TOKEN = 'NUMBER'
+INSTRUCTION_DICT = defaultdict(list)
+for opcode, (_, _, _, _, instruction, _, _) in opcode_dict.iteritems():
+    INSTRUCTION_DICT[instruction].append(opcode)
+INSTRUCTION_DICT = dict(INSTRUCTION_DICT)
+TOKEN_WORD_LIST = (
+    'EQU',
+    'ORG',
+    'CHIP',
+    'ENDP',
+)
+NO_OPERAND = NoOperand()
+AUTO_LABEL = '@@'
+AUTO_LABEL_FORWARD = '@F'
+AUTO_LABEL_BACKWARD = '@B'
+
+class Assembler(object):
+    tokens = (
+        'CODE',
+        'DATA',
+        'IDENTIFIER',
+        INSTRUCTION_TOKEN,
+        DATAWORD_TOKEN,
+        DATABYTE_TOKEN,
+        'BIT_SELECTOR',
+        NUMBER_TOKEN,
+        'EOL',
+        'CODE_OPTIONS_BEGIN',
+        'CODE_OPTIONS_END',
+        'CODE_OPTION',
+    ) + TOKEN_WORD_LIST
+    literals = '#,:'
+    t_ignore = ' \t'
+    t_ignore_COMMENT = ';.*'
+    t_CODE = '\\.CODE'
+    t_DATA = '\\.DATA'
+    t_CODE_OPTIONS_BEGIN = '//{{SONIX_CODE_OPTION'
+    t_CODE_OPTIONS_END = '//}}SONIX_CODE_OPTION'
+    t_CODE_OPTION = '\\.Code_Option'
+
+    @staticmethod
+    def t_QUOTED_STRING(token):
+        '''"(\\.|[^\\"])*"'''
+        token.value = ast.literal_eval(token.value)
+        token.type = 'IDENTIFIER'
+        return token
+
+    # XXX: accept non-ascii identifiers ?
+    @staticmethod
+    def t_IDENTIFIER(token):
+        '''[a-zA-Z_@][a-zA-Z_0-9@]*'''
+        if token.value in INSTRUCTION_DICT:
+            token.type = INSTRUCTION_TOKEN
+        elif token.value == 'DB':
+            token.type = DATABYTE_TOKEN
+        elif token.value == 'DW':
+            token.type = DATAWORD_TOKEN
+        elif token.value in TOKEN_WORD_LIST:
+            token.type = token.value
+        return token
+
+    @staticmethod
+    def t_BIT_SELECTOR(token):
+        '''\\.[0-7]'''
+        token.value = int(token.value[1], 10)
+        return token
+
+    @staticmethod
+    def t_HEX_NUMBER(token):
+        '''0([Xx][0-9a-fA-F]+|[0-9a-fA-F]+[Hh])'''
+        token.value = int(token.value.rstrip('Hh'), 16)
+        token.type = NUMBER_TOKEN
+        return token
+
+    @staticmethod
+    def t_BIN_NUMBER(token):
+        '''0([Bb][01]+|[01]+[Bb])'''
+        token.value = int(token.value.rstrip('Bb', 2))
+        token.type = NUMBER_TOKEN
+        return token
+
+    @staticmethod
+    def t_DEC_NUMBER(token):
+        '''[1-9][0-9]*'''
+        token.value = int(token.value, 10)
+        token.type = NUMBER_TOKEN
+        return token
+
+    @staticmethod
+    def t_CHAR(token):
+        """'(.)'"""
+        token.value = ord(token.value.strip("'").encode('ascii'))
+        token.type = NUMBER_TOKEN
+        return token
+
+    @staticmethod
+    def t_EOL(token):
+        '''\\n+'''
+        token.lexer.lineno += len(token.value)
+        return token
+
+    @staticmethod
+    def t_error(token):
+        print("Illegal character '%s'" % token.value[0])
+        token.lexer.skip(1)
+
+    def p_file(self, production):
+        '''
+        file : chip code_options_block sections ENDP EOL
+        '''
+        self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
+        if self.label_referer_dict:
+            raise NameError(', '.join(self.label_referer_dict))
+
+    def p_chip(self, production):
+        '''
+        chip : CHIP IDENTIFIER EOL
+        '''
+        with open(production[2].lower() + '.cfg') as config:
+            chip = parseConfig([config])
+        self.chip = chip
+        # Sanity check
+        if chip['chip']['name'] != production[2]:
+            raise ValueError('Inconsistent config file')
+        for address, mask, value_names in chip['code-option'].itervalues():
+            if mask == 0:
+                self.rom[address] = value_names # Actually a single value
+        for address, name in chip['rom'].iteritems():
+            self.identifier_dict[name] = Address(address)
+        for _, _, _, ram_dict in chip['ram']:
+            for address, name in ram_dict.iteritems():
+                if '.' in address:
+                    word_address, bit_address = address.split('.')
+                    address = BitAddress(
+                        int(word_address, 0),
+                        int(bit_address, 0),
+                    )
+                else:
+                    address = Address(int(address, 0))
+                self.identifier_dict[name] = address
+
+    @staticmethod
+    def p_code_option_block(production):
+        '''
+        code_options_block : CODE_OPTIONS_BEGIN EOL code_options CODE_OPTIONS_END EOL
+        '''
+        pass
+
+    @staticmethod
+    def p_code_options(production):
+        '''
+        code_options : code_options code_option
+                     | code_options EOL
+                     | empty
+        '''
+        pass
+
+    def p_code_option(self, production):
+        '''
+        code_option : CODE_OPTION IDENTIFIER IDENTIFIER EOL
+        '''
+        address, mask, value_names = self.chip['code-option'][production[2]]
+        assert mask
+        if self.rom[address] & mask:
+            raise ValueError('Duplicate code option declaration')
+        shift = 0
+        while mask & 1 == 0:
+            shift += 1
+            mask >>= 1
+        self.rom[address] |= {
+            y: x for x, y in value_names.iteritems()
+        }[production[3]] << shift
+
+    @staticmethod
+    def p_sections(production):
+        '''
+        sections : sections section
+                 | empty
+        '''
+        pass
+
+    @staticmethod
+    def p_section(production):
+        '''
+        section : CODE EOL emitables
+                | DATA EOL declarations
+        '''
+        pass
+
+    @staticmethod
+    def p_declarations(production):
+        '''
+        declarations : declarations declaration
+                     | declarations EOL
+                     | empty
+        '''
+        pass
+
+    @staticmethod
+    def p_bit_address_number(production):
+        '''
+        bit_address : NUMBER BIT_SELECTOR
+        '''
+        production[0] = BitAddress(production[1], production[2])
+
+    def p_bit_address_identifier(self, production):
+        '''
+        bit_address : IDENTIFIER BIT_SELECTOR
+        '''
+        identifier = production[1]
+        try:
+            address = self.identifier_dict[identifier].value
+        except KeyError:
+            raise NameError(identifier)
+        production[0] = BitAddress(address, production[2])
+
+    @staticmethod
+    def p_address(production):
+        """
+        address : NUMBER
+        """
+        production[0] = Address(production[1])
+
+    def p_declaration_address(self, production):
+        '''
+        declaration : IDENTIFIER EQU address EOL
+                    | IDENTIFIER EQU bit_address EOL
+        '''
+        # XXX: case-sensitive ?
+        identifier = production[1]
+        value = production[3]
+        if self.identifier_dict.get(identifier, value) != value:
+            warnings.warn('Redefining %r (was %r) with different value: %r' % (
+                identifier,
+                self.identifier_dict[identifier],
+                value,
+            ))
+        self.identifier_dict[identifier] = value
+
+    @staticmethod
+    def p_emitables(production):
+        '''
+        emitables : emitables emitable
+                  | emitables EOL
+                  | empty
+        '''
+        pass
+
+    def p_emitable_org(self, production):
+        '''
+        emitable : ORG NUMBER EOL
+        '''
+        self.address = production[2]
+
+    def p_emitable_label(self, production):
+        '''
+        emitable : IDENTIFIER ':' EOL
+        '''
+        name = production[1]
+        if name in (AUTO_LABEL_FORWARD, AUTO_LABEL_BACKWARD):
+            raise NameError('Reserved label name %r' % name)
+        is_auto_label = name == AUTO_LABEL
+        address = Address(self.address)
+        if self.identifier_dict.get(name, address) != address:
+            raise NameError('Redefining label %r' % name)
+        if is_auto_label:
+            # Resolve any forward reference.
+            name = AUTO_LABEL_FORWARD
+        assert address.value & 0x3fff == address.value
+        for referrer in self.label_referer_dict.pop(name, ()):
+            self.rom[referrer] |= address.value
+        if is_auto_label:
+            # Prepare for any back reference
+            name = AUTO_LABEL_BACKWARD
+        self.identifier_dict[name] = address
+
+    def p_emitable_db(self, production):
+        '''
+        emitable : DATABYTE data_list EOL
+        '''
+        data_iterator = iter(production[2])
+        while True:
+            try:
+                data_a = next(data_iterator)
+            except StopIteration:
+                break
+            try:
+                data_r = next(data_iterator)
+            except StopIteration:
+                data_r = 0
+            self.write(data_a | (data_r << 8))
+
+    def p_emitable_dw(self, production):
+        '''
+        emitable : DATAWORD data_list EOL
+        '''
+        for data in production[2]:
+            self.write(data)
+
+    @staticmethod
+    def p_data_list_many(production):
+        '''
+        data_list : data_list ',' NUMBER
+        '''
+        production[0] = production[1] + (production[3], )
+
+    @staticmethod
+    def p_data_list_one(production):
+        '''
+        data_list : NUMBER
+        '''
+        production[0] = (production[1], )
+
+    def p_emitable_insn_0(self, production):
+        '''
+        emitable : INSTRUCTION EOL
+        '''
+        self.writeInstruction(production[1])
+
+    def p_emitable_insn_1(self, production):
+        '''
+        emitable : INSTRUCTION operand EOL
+        '''
+        self.writeInstruction(production[1], production[2])
+
+    def p_emitable_insn_2(self, production):
+        '''
+        emitable : INSTRUCTION operand ',' operand EOL
+        '''
+        self.writeInstruction(production[1], production[2], production[4])
+
+    @staticmethod
+    def p_operand_immediate(production):
+        '''
+        operand : '#' NUMBER
+        '''
+        production[0] = Immediate(production[2])
+
+    @staticmethod
+    def p_operand_address(production):
+        '''
+        operand : NUMBER
+        '''
+        production[0] = Address(production[1])
+
+    @staticmethod
+    def p_operand_bit_address(production):
+        '''
+        operand : bit_address
+        '''
+        production[0] = production[1]
+
+    def p_operand_identifier(self, production):
+        '''
+        operand : IDENTIFIER
+        '''
+        identifier = production[1]
+        try:
+            production[0] = self.identifier_dict[identifier]
+        except KeyError:
+            exception = NameError(identifier)
+            if identifier == AUTO_LABEL_BACKWARD:
+                # Backward references must always be immediately resolvable.
+                # Otherwise a "@@" label is missing.
+                raise exception
+            production[0] = exception
+
+    def p_operand_immediate_identifier(self, production):
+        '''
+        operand : '#' IDENTIFIER
+        '''
+        try:
+            production[0] = self.identifier_dict[production[1]]
+        except KeyError:
+            raise NameError(production[1])
+
+    @staticmethod
+    def p_empty(production):
+        '''
+        empty :
+        '''
+        pass
+
+    def p_error(self, production):
+        raise SyntaxError("Syntax error in input!")
+
+    def __init__(self):
+        self.identifier_dict = {
+            'A': 'A', # Magic identifier for instruction matching
+        }
+        self.address = 0
+        self.rom = {}
+        self.label_referer_dict = defaultdict(list)
+        self._lexer = lex(
+            module=self,
+        )
+        self._parser = yacc(
+            module=self,
+            start='file',
+            debug=False,
+            write_tables=False,
+        )
+
+    def parse(self, source):
+        return self._parser.parse(
+            source,
+            lexer=self._lexer,
+        )
+
+    def write(self, value):
+        if not 0 <= value <= 0xffff:
+            raise ValueError('Value out of bounds: %x' % value)
+        if not 0 <= self.address <= 0x3fff:
+            raise ValueError('Address out of bounds: %x' % value)
+        if self.address in self.rom:
+            raise ValueError('Redefining program address %x' % self.address)
+        self.rom[self.address] = value
+        self.address += 1
+
+    def writeInstruction(self, name, left=NO_OPERAND, right=NO_OPERAND):
+        try:
+            opcode_list = INSTRUCTION_DICT[name]
+        except KeyError:
+            raise NameError('No such instruction: %r' % name)
+        for opcode in opcode_list:
+            mask, space, _, _, _, left_type, right_type = opcode_dict[opcode]
+            if space is ROM_SPACE and isinstance(left, NameError):
+                # Note: JUMP & CALL only accept one argument, ignore "right".
+                # Mask sanity check
+                assert mask == 0x3fff
+                # Remember address for label...
+                self.label_referer_dict[left.args[0]].append(self.address)
+                # ... and use placeholder
+                left = Address(0)
+            if space is RAM_SPACE:
+                if isinstance(left, NameError):
+                    raise left
+                if isinstance(right, NameError):
+                    raise right
+            left_is_fixed = isinstance(left_type, basestring)
+            right_is_fixed = isinstance(right_type, basestring)
+            if (
+                left_is_fixed and left == self.identifier_dict[left_type] or
+                not left_is_fixed and isinstance(left, left_type)
+            ) and (
+                right_is_fixed and right == self.identifier_dict[right_type] or
+                not right_is_fixed and isinstance(right, right_type)
+            ):
+                opcode <<= 8
+                if not left_is_fixed and not isinstance(left, NoOperand):
+                    operand_org = left
+                elif not right_is_fixed and not isinstance(right, NoOperand):
+                    operand_org = right
+                else:
+                    operand_org = None
+                if operand_org is not None:
+                    if isinstance(operand_org, BitAddress):
+                        opcode |= operand_org.bit << 8
+                    operand_org = operand_org.value
+                    operand = operand_org & mask
+                    if operand != operand_org:
+                        raise ValueError(
+                            'Operand too large for instruction %r: %x' % (
+                                name,
+                                operand_org,
+                            ),
+                        )
+                    opcode |= operand
+                self.write(opcode)
+                break
+        else:
+            raise NameError('No opcode suitable for %r %r, %r' % (
+                name,
+                left.__class__,
+                right.__class__,
+            ))
+
+def main():
+    parser = argparse.ArgumentParser(description='SN8F2288 assembler')
+    parser.add_argument(
+        '-o',
+        '--output',
+        type=argparse.FileType('wb'),
+        default=sys.stdout,
+        help='Path to write binary image to, or - for stdout (default).',
+    )
+    parser.add_argument(
+        'input',
+        type=argparse.FileType('r'),
+        default=sys.stdin,
+        help='Source to assemble. - for stdin (default).',
+    )
+    args = parser.parse_args()
+    assembler = Assembler()
+    with args.input as infile:
+        assembler.parse(infile.read())
+    with args.output as outfile:
+        write = outfile.write
+        for address in range(0x3000):
+            write(pack('<H', assembler.rom.get(address, 0)))
+
+if __name__ == '__main__':
+    main()

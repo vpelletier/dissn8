@@ -21,22 +21,21 @@ This is not a python module, do not import it - run it.
 from __future__ import print_function
 import argparse
 from collections import defaultdict
-import ConfigParser
 import itertools
 import os
 from struct import unpack
 import sys
+from libsn8 import (
+    NUL_SPACE, ZRO_SPACE, RAM_SPACE, ROM_SPACE, IMM_SPACE,
+    NONXT, NEXTI, BRNCH, JUMPI,
+    Operand, NoOperand,
+    opcode_dict,
+    parseConfig,
+)
 
 ram_range_symbol_list = []
 rom_symbol_dict = {}
 entry_stack = []
-comment_dict = {}
-
-NUL_SPACE = None # No operand
-ZRO_SPACE = 0    # Operand is zero-page ram address
-RAM_SPACE = 1    # Operand is ram address
-ROM_SPACE = 2    # Operand is rom address
-IMM_SPACE = 3    # Operand is immediate value
 
 caller_dict = defaultdict(list)
 jumper_dict = defaultdict(list)
@@ -45,139 +44,10 @@ function_dict = {}
 line_ownership_dict = {}
 jump_dict = {}
 
-def expandRange(value):
-    if not value:
-        return {}
-    return {
-        item
-        for boundary_list in (
-            span.split("-") for span in value.split(",")
-        )
-        for item in xrange(
-            int(boundary_list[0].strip(), 0),
-            int(boundary_list[-1].strip(), 0) + 1,
-        )
-    }
-
 def asPrintable(value):
     if 0x20 <= value < 0x7f:
         return chr(value)
     return '.'
-
-def NONXT(addr, operand, function):
-    """
-    There is no fixed next-instruction address (RET & RETI).
-    """
-    pass
-def NEXTI(addr, operand, function):
-    """
-    Always execute next instruction (normal instructions).
-    """
-    entry_stack.append((addr + 1, function))
-def BRNCH(addr, operand, function):
-    """
-    Execute next instruction or the one after that (conditional branches).
-    """
-    entry_stack.append((addr + 1, function))
-    entry_stack.append((addr + 2, function))
-def JUMPI(addr, operand, function):
-    """
-    Jump to some far address (unconditional branches).
-    Keep track of what jumped to where and declare a label if missing.
-    """
-    entry_stack.append((operand, function))
-    jumper_dict[operand].append(addr)
-    if operand not in rom_symbol_dict:
-        if function is None:
-            offset = -1 # systematic disassembler, force absolute labels
-        else:
-            offset = operand - function_dict[function]
-        rom_symbol_dict[operand] = (
-            '%s_%04x' % (function, offset)
-            if offset >= 0 else
-            '_label_%04x' % operand
-        )
-def CALLI(addr, operand, function):
-    """
-    Call some address (call instructions).
-    Keep track of what called where and declare a label if missing.
-    """
-    callee_name = rom_symbol_dict.setdefault(operand, 'func_%04x' % operand)
-    if callee_name in function_dict:
-        assert function_dict[callee_name] == operand, (
-            callee_name,
-            function_dict[operand],
-            operand,
-        )
-    else:
-        function_dict[callee_name] = operand
-    entry_stack.append((operand, callee_name))
-    entry_stack.append((addr + 1, function))
-    caller_dict[operand].append(addr)
-
-opcode_dict = {
-    0x00: (0x0000, NUL_SPACE, None, NEXTI, 'NOP',    None),
-    0x02: (0x00ff, ZRO_SPACE, 'rw', NEXTI, 'B0XCH',  'A, %s'),
-    0x03: (0x00ff, ZRO_SPACE, 'rw', NEXTI, 'B0ADD',  '%s, A'),
-    0x04: (0x0000, NUL_SPACE, None, NEXTI, 'PUSH',   None),
-    0x05: (0x0000, NUL_SPACE, None, NEXTI, 'POP',    None),
-    0x06: (0x00ff, IMM_SPACE, None, BRNCH, 'CMPRS',  'A, %s'),
-    0x07: (0x00ff, RAM_SPACE, 'r ', BRNCH, 'CMPRS',  'A, %s'),
-    0x08: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'RRC',    '%s'),
-    0x09: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'RRCM',   '%s'),
-    0x0a: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'RLC',    '%s'),
-    0x0b: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'RLCM',   '%s'),
-    0x0d: (0x0000, NUL_SPACE, None, NEXTI, 'MOVC',   None),
-    0x0e: (0x0000, NUL_SPACE, None, NONXT, 'RET',    None),
-    0x0f: (0x0000, NUL_SPACE, None, NONXT, 'RETI',   None),
-    0x10: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'ADC',    'A, %s'),
-    0x11: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'ADC',    '%s, A'),
-    0x12: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'ADD',    'A, %s'),
-    0x13: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'ADD',    '%s, A'),
-    0x14: (0x00ff, IMM_SPACE, None, NEXTI, 'ADD',    'A, %s'),
-    0x15: (0x00ff, RAM_SPACE, 'r ', BRNCH, 'INCS',   '%s'),
-    0x16: (0x00ff, RAM_SPACE, 'rw', BRNCH, 'INCMS',  '%s'),
-    0x17: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'SWAP',   '%s'),
-    0x18: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'OR',     'A, %s'),
-    0x19: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'OR',     '%s, A'),
-    0x1a: (0x00ff, IMM_SPACE, None, NEXTI, 'OR',     'A, %s'),
-    0x1b: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'XOR',    'A, %s'),
-    0x1c: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'XOR',    '%s, A'),
-    0x1d: (0x00ff, IMM_SPACE, None, NEXTI, 'XOR',    'A, %s'),
-    0x1e: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'MOV',    'A, %s'),
-    0x1f: (0x00ff, RAM_SPACE, ' w', NEXTI, 'MOV',    '%s, A'),
-    0x20: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'SBC',    'A, %s'),
-    0x21: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'SBC',    '%s, A'),
-    0x22: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'SUB',    'A, %s'),
-    0x23: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'SUB',    '%s, A'),
-    0x24: (0x00ff, IMM_SPACE, None, NEXTI, 'SUB',    'A, %s'),
-    0x25: (0x00ff, RAM_SPACE, 'r ', BRNCH, 'DECS',   '%s'),
-    0x26: (0x00ff, RAM_SPACE, 'rw', BRNCH, 'DECMS',  '%s'),
-    0x27: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'SWAPM',  '%s'),
-    0x28: (0x00ff, RAM_SPACE, 'r ', NEXTI, 'AND',    'A, %s'),
-    0x29: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'AND',    '%s, A'),
-    0x2a: (0x00ff, IMM_SPACE, None, NEXTI, 'AND',    'A, %s'),
-    0x2b: (0x00ff, RAM_SPACE, ' 0', NEXTI, 'CLR',    '%s'),
-    0x2c: (0x00ff, RAM_SPACE, 'rw', NEXTI, 'XCH',    'A, %s'),
-    0x2d: (0x00ff, IMM_SPACE, None, NEXTI, 'MOV',    'A, %s'),
-    0x2e: (0x00ff, ZRO_SPACE, 'r ', NEXTI, 'B0MOV',  'A, %s'),
-    0x2f: (0x00ff, RAM_SPACE, ' w', NEXTI, 'B0MOV',  '%s, A'),
-    0x32: (0x00ff, IMM_SPACE, None, NEXTI, 'B0MOV',  'R, %s'),
-    0x33: (0x00ff, IMM_SPACE, None, NEXTI, 'B0MOV',  'Z, %s'),
-    0x34: (0x00ff, IMM_SPACE, None, NEXTI, 'B0MOV',  'Y, %s'),
-    0x36: (0x00ff, IMM_SPACE, None, NEXTI, 'B0MOV',  'PFLAG, %s'),
-    0x37: (0x00ff, IMM_SPACE, None, NEXTI, 'B0MOV',  'RBANK, %s'),
-    0x40: (0x00ff, RAM_SPACE, ' 0', NEXTI, 'BCLR',   '%s'),
-    0x48: (0x00ff, RAM_SPACE, ' 1', NEXTI, 'BSET',   '%s'),
-    0x50: (0x00ff, RAM_SPACE, 'r ', BRNCH, 'BTS0',   '%s'),
-    0x58: (0x00ff, RAM_SPACE, 'r ', BRNCH, 'BTS1',   '%s'),
-    0x60: (0x00ff, ZRO_SPACE, ' 0', NEXTI, 'B0BCLR', '%s'),
-    0x68: (0x00ff, ZRO_SPACE, ' 1', NEXTI, 'B0BSET', '%s'),
-    0x70: (0x00ff, ZRO_SPACE, 'r ', BRNCH, 'B0BTS0', '%s'),
-    0x78: (0x00ff, ZRO_SPACE, 'r ', BRNCH, 'B0BTS1', '%s'),
-    0x80: (0x3fff, ROM_SPACE, None, JUMPI, 'JMP',    '%s'),
-    0xc0: (0x3fff, ROM_SPACE, None, CALLI, 'CALL',   '%s'),
-}
 
 branch_opcode_implicit_operand_dict = {
     0x06: 'A',
@@ -204,17 +74,34 @@ def disassemble(address, instruction, function):
         opcode_key = bincode
         is_bit = False
     try:
-        mask, opspace, opmode, jump_action, opcode, caption = opcode_dict[opcode_key]
+        (
+            mask,
+            opspace,
+            opmode,
+            jump_action,
+            opcode,
+            left_operand,
+            right_operand,
+        ) = opcode_dict[opcode_key]
     except KeyError:
-        NEXTI(address, None, None)
+        NEXTI(
+            entry_stack, jumper_dict, caller_dict, rom_symbol_dict, function_dict,
+            address, None, None,
+        )
         return 'DW\t0x%04x\t; ILLEGAL OPCODE' % (instruction, )
     if opspace == NUL_SPACE:
-        jump_action(address, None, function)
+        jump_action(
+            entry_stack, jumper_dict, caller_dict, rom_symbol_dict, function_dict,
+            address, None, function,
+        )
         if jump_action is NONXT:
             jump_dict[address] = ()
     else:
         operand = instruction & mask
-        jump_action(address, operand, function)
+        jump_action(
+            entry_stack, jumper_dict, caller_dict, rom_symbol_dict, function_dict,
+            address, operand, function,
+        )
         if opspace == ROM_SPACE:
             symbol = rom_symbol_dict.get(operand)
             operand_fmt = '0x%04x'
@@ -264,7 +151,13 @@ def disassemble(address, instruction, function):
             jump_dict[address] = (
                 (operand, None, 'black'),
             )
-        opcode += '\t' + caption % symbol
+        operand_caption = ', '.join(
+            x if isinstance(x, basestring) else symbol
+            for x in (left_operand, right_operand)
+            if x is not NoOperand
+        )
+        if operand_caption:
+            opcode += '\t' + operand_caption
     return opcode
 
 def systematic(rom):
@@ -372,17 +265,11 @@ def getFunctionNameAndOffset(address):
     function_name = line_ownership_dict[address]
     return '%s%#+x' % (function_name, address - function_dict[function_name])
 
-class CasedSafeConfigParser(ConfigParser.SafeConfigParser):
-    @staticmethod
-    def optionxform(optionstr):
-        return optionstr
-
 def main():
     method_dict = {
         'walker': walker,
         'systematic': systematic,
     }
-
     parser = argparse.ArgumentParser(description='SN8F228(8|3|31) USB 2.0'
         ' full-speed 8-bits microcontroller disassembler')
     parser.add_argument('-c', '--chip', action='append', required=True,
@@ -407,35 +294,14 @@ def main():
             'disassemble, or - for stdin (default).')
     args = parser.parse_args()
     write = args.output.write
-
-    chip_config = CasedSafeConfigParser()
-    for chip_file in args.chip:
-        chip_config.readfp(chip_file)
-    chip = {}
-    for section_name in chip_config.sections():
-        chip[section_name] = section = dict(chip_config.items(section_name))
-        if section_name.startswith('ram'):
-            priority = 0
-            if section_name.startswith('ram@'):
-                _, ram_range = section_name.split('@')
-                start, stop = ram_range.split('-')
-            else:
-                assert section_name in ('ram', 'ram-reserved'), repr(section_name)
-                start = chip['chip']['rom_start']
-                stop = chip['chip']['rom_stop']
-                if section_name == 'ram-reserved':
-                    # Low priority, to allow overriding in [ram] section.
-                    priority = 1
-            ram_range_symbol_list.append([priority, int(start, 0), int(stop, 0), section])
-    # Shorter ranges first, overriding larger maps
-    ram_range_symbol_list.sort(key=lambda x: (x[0], x[2] - x[1]))
-    # chip name must be set
-    write('CHIP\t' + chip['chip']['name'] + '\n')
-    rom_reserved_set = expandRange(chip['chip'].get('rom_reserved', ''))
+    chip = parseConfig(args.chip)
+    ram_range_symbol_list.extend(chip['ram'])
+    rom_symbol_dict.update(chip['rom'])
+    rom_reserved_set = chip['chip']['rom_reserved']
     # Note: only look for duplicate ram symbols, not rom.
     flat_ram_symbol_dict = defaultdict(lambda: ([], defaultdict(list)))
     reverse_dict = {}
-    for ram_range_symbol_entry in ram_range_symbol_list:
+    for ram_range_symbol_entry in chip['ram']:
         _, _, _, ram_symbol_dict = ram_range_symbol_entry
         ram_range_symbol_entry[3] = new_ram_symbol_dict = {}
         for address, name in ram_symbol_dict.iteritems():
@@ -470,22 +336,13 @@ def main():
                 bit = int(bit)
                 entry[1][bit] = name
                 flat_bit_dict[bit].append(name)
-    ram_reserved_name_set = {x for x in chip.get('ram-reserved', {}).itervalues()}
-    rom_symbol_dict.update(
-        (int(address, 0), name) for address, name in chip.get('rom', {}).iteritems()
-    )
-    function_addr_name_list = [
-        (int(address, 0), name)
-        for address, name in chip['callee'].iteritems()
-    ]
-    rom_symbol_dict.update(function_addr_name_list)
-    line_ownership_dict.update(function_addr_name_list)
-    function_dict.update((y, x) for x, y in function_addr_name_list)
+    # chip name must be set
+    write('CHIP\t' + chip['chip']['name'] + '\n')
+    function_addr_name_dict = chip['callee']
+    line_ownership_dict.update(function_addr_name_dict)
+    function_dict.update((y, x) for x, y in function_addr_name_dict.iteritems())
     entry_stack.extend(line_ownership_dict.iteritems())
-    comment_dict.update(
-        (int(address, 0), comment)
-        for address, comment in chip['comment'].iteritems()
-    )
+    comment_dict = chip['comment']
     for reserved in rom_reserved_set:
         comment_dict.setdefault(reserved, 'Reserved')
     read = args.input.read
@@ -493,8 +350,8 @@ def main():
         read(88)
     rom = {}
     for address in xrange(
-        int(chip['chip']['rom_start'], 0),
-        int(chip['chip']['rom_stop'], 0) + 1,
+        chip['chip']['rom_start'],
+        chip['chip']['rom_stop'] + 1,
     ):
         instruction = read(2)
         if len(instruction) != 2:
@@ -503,28 +360,26 @@ def main():
     if read(1):
         print('Ignoring data past end of ROM')
     write('//{{SONIX_CODE_OPTION\n')
-    for option_name, option_definition in chip['code-option'].iteritems():
-        address, mask, value_names = option_definition.split(' ', 2)
-        mask = int(mask, 0)
-        assert mask
-        try:
-            option_value = rom[int(address, 0)] & mask
-        except KeyError:
-            continue
-        while not mask & 1:
-            mask >>= 1
-            option_value >>= 1
-        write(tabstop(
-            '\t.Code_Option\t' + option_name,
-            5,
-            '"' + {
-                int(value, 0): name
-                for value, name in (x.split('=') for x in value_names.split(' '))
-            }[option_value] + '"\n',
-        ))
+    for option_name, (address, mask, value_names) in chip['code-option'].iteritems():
+        if mask:
+            try:
+                option_value = rom[address] & mask
+            except KeyError:
+                continue
+            while not mask & 1:
+                mask >>= 1
+                option_value >>= 1
+            write(tabstop(
+                '\t.Code_Option\t' + option_name,
+                5,
+                '"' + value_names[option_value] + '"\n',
+            ))
     write('//}}SONIX_CODE_OPTION\n')
     disassembled_dict = method_dict[args.method](rom)
     write('.DATA\n')
+    ram_reserved_name_set = {
+        x for x in chip.get('ram-reserved', {}).itervalues()
+    }
     for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.iteritems()):
         for name in flat_name_list:
             if name in ram_reserved_name_set:
