@@ -1,0 +1,30 @@
+#!/bin/sh
+for expected in *.expected; do
+  base="$(basename "$expected" ".expected")"
+  produced="${base}.produced"
+  disassembled="${base}.dis.asm"
+  reproduced="${base}.reproduced"
+  echo -n "${base}... "
+  if ../../assn8 -o "$produced" "${base}.asm"; then :; else
+    echo "assn8 failed"
+    continue
+  fi
+  if cmp --verbose "$expected" "$produced"; then :; else
+    echo "assembled cmp failed"
+    continue
+  fi
+  if ../../dissn8 -c ../../sn8f2288.cfg -o "$disassembled" "$produced"; then :; else
+    echo "dissn8 failed"
+    continue
+  fi
+  if ../../assn8 -o "$reproduced" "$disassembled"; then :; else
+    echo "reassembly failed"
+    continue
+  fi
+  if cmp --verbose "$produced" "$reproduced"; then :; else
+    echo "reassembled cmp failed"
+    continue
+  fi
+  rm "$produced" "$disassembled" "$reproduced"
+  echo "Success"
+done
