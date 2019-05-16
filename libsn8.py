@@ -72,6 +72,7 @@ def parseConfig(config_file_list):
                 if section_name == 'ram-reserved':
                     # Low priority, to allow overriding in [ram] section.
                     priority = 1
+                    chip[section_name] = section
             ram_range_symbol_list.append([priority, int(start, 0), int(stop, 0), section])
             continue
         elif section_name == 'code-option':
