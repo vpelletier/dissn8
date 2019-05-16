@@ -21,6 +21,8 @@ This is not a python module, do not import it - run it.
 import argparse
 import ast
 from collections import defaultdict
+import errno
+import os.path
 from struct import pack
 import sys
 import warnings
@@ -33,10 +35,14 @@ from libsn8 import (
     parseConfig,
 )
 
+CONFIG_DIR = os.path.dirname(__file__)
+
+MARKER = object()
 DATAWORD_TOKEN = 'DATAWORD'
 DATABYTE_TOKEN = 'DATABYTE'
 INSTRUCTION_TOKEN = 'INSTRUCTION'
 NUMBER_TOKEN = 'NUMBER'
+STRING_TOKEN = 'STRING'
 INSTRUCTION_DICT = defaultdict(list)
 for opcode, (_, _, _, _, instruction, _, _) in opcode_dict.iteritems():
     INSTRUCTION_DICT[instruction].append(opcode)
@@ -46,17 +52,39 @@ TOKEN_WORD_LIST = (
     'ORG',
     'CHIP',
     'ENDP',
+    'INCLUDE',
+    'INCLUDEBIN',
 )
 NO_OPERAND = NoOperand()
 AUTO_LABEL = '@@'
 AUTO_LABEL_FORWARD = '@F'
 AUTO_LABEL_BACKWARD = '@B'
 
+class ParserFrame(object):
+    has_set_origin = False
+    def __init__(self, parser, filename, address):
+        self.parser = parser
+        self.filename = filename
+        self.address_until_origin = self.address = address
+        # TODO: separate exported identifiers from file-local ones ?
+        self.identifier_dict = {}
+        self.label_referer_dict = defaultdict(list)
+
+    def setAddress(self, address):
+        if not self.has_set_origin:
+            self.address_until_origin = address
+        self.address = address
+
+    def setOrigin(self, address):
+        self.has_set_origin = True
+        self.address = address
+
 class Assembler(object):
     tokens = (
         'CODE',
         'DATA',
         'IDENTIFIER',
+        STRING_TOKEN,
         INSTRUCTION_TOKEN,
         DATAWORD_TOKEN,
         DATABYTE_TOKEN,
@@ -78,9 +106,11 @@ class Assembler(object):
 
     @staticmethod
     def t_QUOTED_STRING(token):
-        '''"(\\.|[^\\"])*"'''
+        r'''"(\\.|[^\\"\n])*"'''
+        # A double-quote, followed by escaped double-quotes or anything else
+        # than an escape, double-quotes or newline, followed by a double-quote.
         token.value = ast.literal_eval(token.value)
-        token.type = 'IDENTIFIER'
+        token.type = STRING_TOKEN
         return token
 
     # XXX: accept non-ascii identifiers ?
@@ -105,21 +135,21 @@ class Assembler(object):
 
     @staticmethod
     def t_HEX_NUMBER(token):
-        '''0([Xx][0-9a-fA-F]+|[0-9a-fA-F]+[Hh])'''
+        '''0([Xx][0-9a-fA-F]+|[0-9a-fA-F]*[Hh])'''
         token.value = int(token.value.rstrip('Hh'), 16)
         token.type = NUMBER_TOKEN
         return token
 
     @staticmethod
     def t_BIN_NUMBER(token):
-        '''0([Bb][01]+|[01]+[Bb])'''
-        token.value = int(token.value.rstrip('Bb', 2))
+        '''0([Bb][01]+|[01]*[Bb])'''
+        token.value = int(token.value.rstrip('Bb'), 2)
         token.type = NUMBER_TOKEN
         return token
 
     @staticmethod
     def t_DEC_NUMBER(token):
-        '''[1-9][0-9]*'''
+        '''[0-9]+'''
         token.value = int(token.value, 10)
         token.type = NUMBER_TOKEN
         return token
@@ -137,14 +167,18 @@ class Assembler(object):
         token.lexer.lineno += len(token.value)
         return token
 
-    @staticmethod
-    def t_error(token):
-        print("Illegal character '%s'" % token.value[0])
+    def t_error(self, token):
+        print("%s:%i: Illegal character '%r'" % (
+            self.filename,
+            token.lexer.lineno,
+            token.value[0],
+        ))
         token.lexer.skip(1)
 
     def p_file(self, production):
         '''
-        file : chip code_options_block sections ENDP EOL
+        file : sections ENDP EOL
+             | sections
         '''
         self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
         if self.label_referer_dict:
@@ -154,7 +188,13 @@ class Assembler(object):
         '''
         chip : CHIP IDENTIFIER EOL
         '''
-        with open(production[2].lower() + '.cfg') as config:
+        if self.chip is not None:
+            raise SyntaxError('%s:%i: Redefining chip type.' % (
+
+            ))
+        with open(
+            os.path.join(CONFIG_DIR, production[2].lower() + '.cfg'),
+        ) as config:
             chip = parseConfig([config])
         self.chip = chip
         # Sanity check
@@ -162,9 +202,9 @@ class Assembler(object):
             raise ValueError('Inconsistent config file')
         for address, mask, value_names in chip['code-option'].itervalues():
             if mask == 0:
-                self.rom[address] = value_names # Actually a single value
+               self.rom[address] = value_names # Actually a single value
         for address, name in chip['rom'].iteritems():
-            self.identifier_dict[name] = Address(address)
+            self.chip_identifier_dict[name] = Address(address)
         for _, _, _, ram_dict in chip['ram']:
             for address, name in ram_dict.iteritems():
                 if '.' in address:
@@ -175,7 +215,7 @@ class Assembler(object):
                     )
                 else:
                     address = Address(int(address, 0))
-                self.identifier_dict[name] = address
+                self.chip_identifier_dict[name] = address
 
     @staticmethod
     def p_code_option_block(production):
@@ -196,6 +236,7 @@ class Assembler(object):
     def p_code_option(self, production):
         '''
         code_option : CODE_OPTION IDENTIFIER IDENTIFIER EOL
+                    | CODE_OPTION IDENTIFIER STRING EOL
         '''
         address, mask, value_names = self.chip['code-option'][production[2]]
         assert mask
@@ -222,8 +263,32 @@ class Assembler(object):
         '''
         section : CODE EOL emitables
                 | DATA EOL declarations
+                | code_options_block
+                | chip
+                | include
         '''
         pass
+
+    def p_include(self, production):
+        '''
+        include : INCLUDE STRING EOL
+        '''
+        with open(production[2]) as infile:
+            self._parse(infile)
+
+    def p_includebin(self, production):
+        '''
+        include : INCLUDEBIN STRING EOL
+        '''
+        with open(production[2], 'rb') as infile:
+            while True:
+                chunk = infile.read(2)
+                if len(chunk) == 2:
+                    self.write(unpack('<H', chunk)[0])
+                else:
+                    if chunk:
+                        self.write(ord(chunk))
+                    break
 
     @staticmethod
     def p_declarations(production):
@@ -247,17 +312,23 @@ class Assembler(object):
         '''
         identifier = production[1]
         try:
-            address = self.identifier_dict[identifier].value
+            address = self.getIdentifier(identifier).value
         except KeyError:
             raise NameError(identifier)
         production[0] = BitAddress(address, production[2])
 
     @staticmethod
-    def p_address(production):
+    def p_address_number(production):
         """
         address : NUMBER
         """
         production[0] = Address(production[1])
+
+    def p_address_identifier(self, production):
+        """
+        address : IDENTIFIER
+        """
+        production[0] = self.getIdentifier(production[1])
 
     def p_declaration_address(self, production):
         '''
@@ -267,13 +338,13 @@ class Assembler(object):
         # XXX: case-sensitive ?
         identifier = production[1]
         value = production[3]
-        if self.identifier_dict.get(identifier, value) != value:
+        if self.getIdentifier(identifier, value) != value:
             warnings.warn('Redefining %r (was %r) with different value: %r' % (
                 identifier,
-                self.identifier_dict[identifier],
+                self.getIdentifier(identifier),
                 value,
             ))
-        self.identifier_dict[identifier] = value
+        self.setIdentifier(identifier, value)
 
     @staticmethod
     def p_emitables(production):
@@ -288,7 +359,7 @@ class Assembler(object):
         '''
         emitable : ORG NUMBER EOL
         '''
-        self.address = production[2]
+        self._parser_stack[-1].setOrigin(production[2])
 
     def p_emitable_label(self, production):
         '''
@@ -299,7 +370,7 @@ class Assembler(object):
             raise NameError('Reserved label name %r' % name)
         is_auto_label = name == AUTO_LABEL
         address = Address(self.address)
-        if self.identifier_dict.get(name, address) != address:
+        if self.getIdentifier(name, address) != address:
             raise NameError('Redefining label %r' % name)
         if is_auto_label:
             # Resolve any forward reference.
@@ -310,7 +381,7 @@ class Assembler(object):
         if is_auto_label:
             # Prepare for any back reference
             name = AUTO_LABEL_BACKWARD
-        self.identifier_dict[name] = address
+        self.setIdentifier(name, address)
 
     def p_emitable_db(self, production):
         '''
@@ -348,6 +419,13 @@ class Assembler(object):
         data_list : NUMBER
         '''
         production[0] = (production[1], )
+
+    @staticmethod
+    def p_data_list_string(production):
+        '''
+        data_list : STRING
+        '''
+        production[0] = tuple(ord(x) for x in production[1])
 
     def p_emitable_insn_0(self, production):
         '''
@@ -394,7 +472,7 @@ class Assembler(object):
         '''
         identifier = production[1]
         try:
-            production[0] = self.identifier_dict[identifier]
+            production[0] = self.getIdentifier(identifier)
         except KeyError:
             exception = NameError(identifier)
             if identifier == AUTO_LABEL_BACKWARD:
@@ -408,7 +486,7 @@ class Assembler(object):
         operand : '#' IDENTIFIER
         '''
         try:
-            production[0] = self.identifier_dict[production[1]]
+            production[0] = self.getIdentifier(production[1])
         except KeyError:
             raise NameError(production[1])
 
@@ -420,30 +498,110 @@ class Assembler(object):
         pass
 
     def p_error(self, production):
-        raise SyntaxError("Syntax error in input!")
+        raise SyntaxError("%s:%i: Syntax error, unexpected %s: %r" % (
+            self.filename,
+            production.lineno,
+            production.type,
+            production.value,
+        ))
 
-    def __init__(self):
-        self.identifier_dict = {
+    def __init__(self, source_file, debug):
+        self.debug = debug
+        self._parser_stack = []
+        self.chip_identifier_dict = {
             'A': 'A', # Magic identifier for instruction matching
         }
-        self.address = 0
+        self.chip = None
         self.rom = {}
-        self.label_referer_dict = defaultdict(list)
         self._lexer = lex(
             module=self,
         )
-        self._parser = yacc(
+        self._parse(source_file)
+
+    def _parse(self, source_file):
+        parser = yacc(
             module=self,
             start='file',
-            debug=False,
+            debug=self.debug,
             write_tables=False,
         )
-
-    def parse(self, source):
-        return self._parser.parse(
-            source,
-            lexer=self._lexer,
+        if self._parser_stack:
+            if len(self._parser_stack) == 255:
+                raise RuntimeError('maximum inclusion depth exceeded')
+            parent_frame = self._parser_stack[-1]
+            address = parent_frame.address
+        else:
+            parent_frame = None
+            address = 0
+        frame = ParserFrame(
+            parser,
+            source_file.name,
+            address,
         )
+        self._parser_stack.append(frame)
+        try:
+            parser.parse(
+                source_file.read(),
+                lexer=self._lexer,
+                debug=self.debug,
+            )
+            if parent_frame is not None:
+                parent_frame.address = frame.address_until_origin
+                for key, value in frame.identifier_dict.iteritems():
+                    if parent_frame.identifier_dict.setdefault(
+                        key,
+                        value,
+                    ) != value:
+                        raise NameError('%s: Redefining identifier %r' % (
+                            frame.filename,
+                            key,
+                        ))
+        finally:
+            self._parser_stack.pop()
+
+    @property
+    def label_referer_dict(self):
+        try:
+            return self._parser_stack[-1].label_referer_dict
+        except IndexError:
+            return None # Because of ply introspections
+
+    @property
+    def parser(self):
+        try:
+            return self._parser_stack[-1].parser
+        except IndexError:
+            return None # Because of ply introspections
+
+    @property
+    def filename(self):
+        try:
+            return self._parser_stack[-1].filename
+        except IndexError:
+            return None # Because of ply introspections
+
+    @property
+    def address(self):
+        try:
+            return self._parser_stack[-1].address
+        except IndexError:
+            return None # Because of ply introspections
+
+    @address.setter
+    def address(self, value):
+        self._parser_stack[-1].setAddress(value)
+
+    def getIdentifier(self, name, default=MARKER):
+        try:
+            return self.chip_identifier_dict[name]
+        except KeyError:
+            identifier_dict = self._parser_stack[-1].identifier_dict
+            if default is MARKER:
+                return identifier_dict[name]
+            return identifier_dict.get(name, default)
+
+    def setIdentifier(self, name, value):
+        self._parser_stack[-1].identifier_dict[name] = value
 
     def write(self, value):
         if not 0 <= value <= 0xffff:
@@ -478,10 +636,10 @@ class Assembler(object):
             left_is_fixed = isinstance(left_type, basestring)
             right_is_fixed = isinstance(right_type, basestring)
             if (
-                left_is_fixed and left == self.identifier_dict[left_type] or
+                left_is_fixed and left == self.getIdentifier(left_type) or
                 not left_is_fixed and isinstance(left, left_type)
             ) and (
-                right_is_fixed and right == self.identifier_dict[right_type] or
+                right_is_fixed and right == self.getIdentifier(right_type) or
                 not right_is_fixed and isinstance(right, right_type)
             ):
                 opcode <<= 8
@@ -528,10 +686,14 @@ def main():
         default=sys.stdin,
         help='Source to assemble. - for stdin (default).',
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Debug the assembler itself.',
+    )
     args = parser.parse_args()
-    assembler = Assembler()
     with args.input as infile:
-        assembler.parse(infile.read())
+        assembler = Assembler(infile, debug=args.debug)
     with args.output as outfile:
         write = outfile.write
         for address in range(0x3000):
