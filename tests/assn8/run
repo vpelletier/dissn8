@@ -1,6 +1,6 @@
 #!/bin/sh
-for expected in *.expected; do
-  base="$(basename "$expected" ".expected")"
+for expected in *.expected.gz; do
+  base="$(basename "$expected" ".expected.gz")"
   produced="${base}.produced"
   disassembled="${base}.dis.asm"
   reproduced="${base}.reproduced"
@@ -9,7 +9,7 @@ for expected in *.expected; do
     echo "assn8 failed"
     continue
   fi
-  if cmp --verbose "$expected" "$produced"; then :; else
+  if zcat "$expected" | cmp --verbose "$produced"; then :; else
     echo "assembled cmp failed"
     continue
   fi

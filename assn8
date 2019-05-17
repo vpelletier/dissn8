@@ -25,6 +25,7 @@ import errno
 import os.path
 from struct import pack
 import sys
+import traceback
 import warnings
 from ply.yacc import yacc
 from ply.lex import lex
@@ -179,12 +180,23 @@ class Assembler(object):
 
     def p_file(self, production):
         '''
-        file : sections ENDP EOL
-             | sections
+        file : early_includes sections ENDP EOL
+             | early_includes sections
         '''
         self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
         if self.label_referer_dict:
-            raise NameError(', '.join(self.label_referer_dict))
+            raise NameError('Undefined labels: %s' % (
+                ', '.join(self.label_referer_dict),
+            ))
+
+    @staticmethod
+    def p_early_includes(production):
+        '''
+        early_includes : early_includes include
+                       | early_includes EOL
+                       | empty
+        '''
+        pass
 
     def p_chip(self, production):
         '''
@@ -267,7 +279,6 @@ class Assembler(object):
                 | DATA EOL declarations
                 | code_options_block
                 | chip
-                | include
         '''
         pass
 
@@ -275,8 +286,20 @@ class Assembler(object):
         '''
         include : INCLUDE STRING EOL
         '''
-        with open(production[2]) as infile:
-            self._parse(infile)
+        try:
+            with open(production[2]) as infile:
+                self._parse(infile)
+        except Exception:
+            print('Error while processing %r, included from %s:%i:' % (
+                production[2],
+                self.filename,
+                production.lineno(1),
+            ))
+            traceback.print_exc()
+            # The important thing is to not re-raise a SyntaxError, as then
+            # it becomes handled by current parser while the error comes from
+            # another file.
+            raise ValueError
 
     def p_includebin(self, production):
         '''
@@ -357,6 +380,13 @@ class Assembler(object):
         '''
         pass
 
+    @staticmethod
+    def p_emitable_include(production):
+        '''
+        emitable : include
+        '''
+        pass
+
     def p_emitable_org(self, production):
         '''
         emitable : ORG NUMBER EOL
@@ -386,13 +416,16 @@ class Assembler(object):
         if is_auto_label:
             # Resolve any forward reference.
             name = AUTO_LABEL_FORWARD
-        assert address.value & 0x3fff == address.value
-        for referrer in self.label_referer_dict.pop(name, ()):
-            self.rom[referrer] |= address.value
+        self._resolveLabel(name, address.value)
         if is_auto_label:
             # Prepare for any back reference
             name = AUTO_LABEL_BACKWARD
         self.setIdentifier(name, address)
+
+    def _resolveLabel(self, name, address):
+        assert address & 0x3fff == address
+        for referrer in self.label_referer_dict.pop(name, ()):
+            self.rom[referrer] |= address
 
     def p_emitable_db(self, production):
         '''
@@ -524,9 +557,6 @@ class Assembler(object):
         }
         self.chip = None
         self.rom = {}
-        self._lexer = lex(
-            module=self,
-        )
         self._parse(source_file)
 
     def _parse(self, source_file):
@@ -551,24 +581,37 @@ class Assembler(object):
         )
         self._parser_stack.append(frame)
         try:
+            if self.debug:
+                print('Entering %r...' % source_file)
             parser.parse(
                 source_file.read(),
-                lexer=self._lexer,
+                lexer=lex(
+                    module=self,
+                ),
                 debug=self.debug,
             )
-            if parent_frame is not None:
-                parent_frame.address = frame.address_until_origin
-                for key, value in frame.identifier_dict.iteritems():
-                    if parent_frame.identifier_dict.setdefault(
-                        key,
-                        value,
-                    ) != value:
-                        raise NameError('%s: Redefining identifier %r' % (
-                            frame.filename,
-                            key,
-                        ))
         finally:
             self._parser_stack.pop()
+            if self.debug:
+                print('Left %r' % source_file)
+        if parent_frame is not None:
+            parent_frame.address = frame.address_until_origin
+            for key, value in frame.identifier_dict.iteritems():
+                assert key not in (
+                    AUTO_LABEL,
+                    AUTO_LABEL_FORWARD,
+                    AUTO_LABEL_BACKWARD,
+                ), repr(key)
+                if parent_frame.identifier_dict.setdefault(
+                    key,
+                    value,
+                ) != value:
+                    raise NameError('%s: Redefining identifier %r' % (
+                        frame.filename,
+                        key,
+                    ))
+                if isinstance(value, Address):
+                    self._resolveLabel(key, value.value)
 
     @property
     def label_referer_dict(self):

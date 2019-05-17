@@ -1,3 +1,4 @@
+; An "empty" (comments are ignored, EOL is not) line early in the file
 CHIP SN8F2288
 
 //{{SONIX_CODE_OPTION
@@ -47,9 +48,17 @@ start:
         DECMS Z
         JMP   @B
 
-@@:
-        JMP   @B
+        JMP   label_in_included_file
 
+.ALIGN 32
+INCLUDE "0.inc.0.asm"
+        JMP   halt_and_catch_fire
+
+.ALIGN 0x20
+halt_and_catch_fire:
+        JMP   halt_and_catch_fire
+
+.ALIGN 0b00100000
         DW    0xffff, 'F', 'o', 'o', 0x0000
         DB    "Bar", 'B', 'a'
 ENDP
