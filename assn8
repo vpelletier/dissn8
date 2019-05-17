@@ -83,6 +83,7 @@ class Assembler(object):
     tokens = (
         'CODE',
         'DATA',
+        'ALIGN',
         'IDENTIFIER',
         STRING_TOKEN,
         INSTRUCTION_TOKEN,
@@ -100,6 +101,7 @@ class Assembler(object):
     t_ignore_COMMENT = ';.*'
     t_CODE = '\\.CODE'
     t_DATA = '\\.DATA'
+    t_ALIGN = '\\.ALIGN'
     t_CODE_OPTIONS_BEGIN = '//{{SONIX_CODE_OPTION'
     t_CODE_OPTIONS_END = '//}}SONIX_CODE_OPTION'
     t_CODE_OPTION = '\\.Code_Option'
@@ -360,6 +362,15 @@ class Assembler(object):
         emitable : ORG NUMBER EOL
         '''
         self._parser_stack[-1].setOrigin(production[2])
+
+    def p_emitable_align(self, production):
+        '''
+        emitable : ALIGN NUMBER EOL
+        '''
+        alignment = production[2]
+        result, remainder = divmod(self.address, alignment)
+        if remainder:
+            self.address = (result + 1) * alignment
 
     def p_emitable_label(self, production):
         '''
