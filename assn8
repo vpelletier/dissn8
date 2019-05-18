@@ -67,7 +67,6 @@ class ParserFrame(object):
         self.parser = parser
         self.filename = filename
         self.address_until_origin = self.address = address
-        # TODO: separate exported identifiers from file-local ones ?
         self.identifier_dict = {}
         self.label_referer_dict = defaultdict(list)
 
@@ -363,7 +362,7 @@ class Assembler(object):
         # XXX: case-sensitive ?
         identifier = production[1]
         value = production[3]
-        if self.getIdentifier(identifier, value) != value:
+        if self.getIdentifier(identifier, value, acquire=False) != value:
             warnings.warn('Redefining %r (was %r) with different value: %r' % (
                 identifier,
                 self.getIdentifier(identifier),
@@ -411,7 +410,7 @@ class Assembler(object):
             raise NameError('Reserved label name %r' % name)
         is_auto_label = name == AUTO_LABEL
         address = Address(self.address)
-        if self.getIdentifier(name, address) != address:
+        if self.getIdentifier(name, address, acquire=not name.startswith('_')) != address:
             raise NameError('Redefining label %r' % name)
         if is_auto_label:
             # Resolve any forward reference.
@@ -597,6 +596,9 @@ class Assembler(object):
         if parent_frame is not None:
             parent_frame.address = frame.address_until_origin
             for key, value in frame.identifier_dict.iteritems():
+                if key.startswith('_'):
+                    # Do not export symbols starting with an underscore.
+                    continue
                 assert key not in (
                     AUTO_LABEL,
                     AUTO_LABEL_FORWARD,
@@ -645,14 +647,22 @@ class Assembler(object):
     def address(self, value):
         self._parser_stack[-1].setAddress(value)
 
-    def getIdentifier(self, name, default=MARKER):
+    def getIdentifier(self, name, default=MARKER, acquire=True):
         try:
             return self.chip_identifier_dict[name]
         except KeyError:
-            identifier_dict = self._parser_stack[-1].identifier_dict
-            if default is MARKER:
-                return identifier_dict[name]
-            return identifier_dict.get(name, default)
+            pass
+        for frame in (
+            reversed(self._parser_stack)
+            if acquire else
+            self._parser_stack[-1:]
+        ):
+            identifier_dict = frame.identifier_dict
+            if name in identifier_dict:
+                return identifier_dict.get(name, default)
+        if default is MARKER:
+            raise KeyError(name)
+        return default
 
     def setIdentifier(self, name, value):
         self._parser_stack[-1].identifier_dict[name] = value
