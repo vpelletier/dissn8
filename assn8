@@ -602,11 +602,12 @@ class Assembler(object):
                 if key.startswith('_'):
                     # Do not export symbols starting with an underscore.
                     continue
-                assert key not in (
+                if key in (
                     AUTO_LABEL,
                     AUTO_LABEL_FORWARD,
                     AUTO_LABEL_BACKWARD,
-                ), repr(key)
+                ):
+                    continue
                 if parent_frame.identifier_dict.setdefault(
                     key,
                     value,
