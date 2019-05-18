@@ -529,9 +529,12 @@ class Assembler(object):
         operand : '#' IDENTIFIER
         '''
         try:
-            production[0] = self.getIdentifier(production[1])
+            address = self.getIdentifier(production[2])
         except KeyError:
-            raise NameError(production[1])
+            raise NameError(production[2])
+        if not isinstance(address, Address):
+            raise TypeError('Wrong identifier type for immediate')
+        production[0] = Immediate(address.value)
 
     @staticmethod
     def p_empty(production):

@@ -48,6 +48,8 @@ start:
         DECMS Z
         JMP   @B
 
+        MOV   A, #just_y  ; immediate value from declared identifier
+
         JMP   label_in_included_file
 
 .ALIGN 32
