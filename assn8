@@ -32,7 +32,7 @@ from ply.lex import lex
 from libsn8 import (
     opcode_dict,
     BitAddress, Address, Immediate, NoOperand,
-    RAM_SPACE, ROM_SPACE,
+    ZRO_SPACE, RAM_SPACE, ROM_SPACE,
     parseConfig,
 )
 
@@ -695,7 +695,7 @@ class Assembler(object):
                 self.label_referer_dict[left.args[0]].append(self.address)
                 # ... and use placeholder
                 left = Address(0)
-            if space is RAM_SPACE:
+            if space in (RAM_SPACE, ZRO_SPACE):
                 if isinstance(left, NameError):
                     raise left
                 if isinstance(right, NameError):
