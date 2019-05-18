@@ -734,8 +734,8 @@ class Assembler(object):
         else:
             raise NameError('No opcode suitable for %r %r, %r' % (
                 name,
-                left.__class__,
-                right.__class__,
+                left,
+                right,
             ))
 
 def main():
