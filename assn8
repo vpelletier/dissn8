@@ -99,9 +99,9 @@ class Assembler(object):
     literals = '#,:'
     t_ignore = ' \t'
     t_ignore_COMMENT = ';.*'
-    t_CODE = '\\.CODE'
-    t_DATA = '\\.DATA'
-    t_ALIGN = '\\.ALIGN'
+    t_CODE = r'\.CODE'
+    t_DATA = r'\.DATA'
+    t_ALIGN = r'\.ALIGN'
     t_CODE_OPTIONS_BEGIN = '//{{SONIX_CODE_OPTION'
     t_CODE_OPTIONS_END = '//}}SONIX_CODE_OPTION'
     t_CODE_OPTION = '\\.Code_Option'
@@ -131,7 +131,7 @@ class Assembler(object):
 
     @staticmethod
     def t_BIT_SELECTOR(token):
-        '''\\.[0-7]'''
+        r'''\.[0-7]'''
         token.value = int(token.value[1], 10)
         return token
 
@@ -165,7 +165,7 @@ class Assembler(object):
 
     @staticmethod
     def t_EOL(token):
-        '''\\n+'''
+        r'''\n+'''
         token.lexer.lineno += len(token.value)
         return token
 
