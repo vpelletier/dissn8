@@ -22,19 +22,29 @@ RAM_SPACE = 1    # Operand is ram address
 ROM_SPACE = 2    # Operand is rom address
 IMM_SPACE = 3    # Operand is immediate value
 
-def expandRange(value):
-    if not value:
-        return {}
-    return {
-        item
-        for boundary_list in (
-            span.split("-") for span in value.split(",")
-        )
-        for item in xrange(
-            int(boundary_list[0].strip(), 0),
-            int(boundary_list[-1].strip(), 0) + 1,
-        )
-    }
+class MultiRange(object):
+    def __init__(self, definition, min_boundary, max_boundary):
+        self.range_list = range_list = []
+        for span in definition.split(","):
+            if '-' in span:
+                start, stop = span.split('-')
+                start = int(start, 0) if start else min_boundary
+                stop = int(stop, 0) + 1 if stop else max_boundary
+            else:
+                start = int(span, 0)
+                stop = start + 1
+            range_list.append((start, stop))
+
+    def __contains__(self, value):
+        for start, stop in self.range_list:
+            if start <= value < stop:
+                return True
+        return False
+
+    def __iter__(self):
+        for start, stop, in self.range_list:
+            for value in xrange(start, stop):
+                yield value
 
 class CasedSafeConfigParser(ConfigParser.SafeConfigParser):
     @staticmethod
@@ -52,8 +62,17 @@ def parseConfig(config_file_list):
     for section_name in chip_config.sections():
         section = dict(chip_config.items(section_name))
         if section_name == 'chip':
-            section['rom_reserved'] = expandRange(
+            section['rom_reserved'] = MultiRange(
                 section.get('rom_reserved', ''),
+                int(section['rom_start'], 0),
+                int(section['rom_stop'], 0),
+            )
+            section['ram_start'] = ram_start = int(section['ram_start'], 0)
+            section['ram_stop'] = ram_stop = int(section['ram_stop'], 0)
+            section['ram_reserved'] = MultiRange(
+                section.get('ram_reserved', ''),
+                ram_start,
+                ram_stop,
             )
         elif section_name in ('comment', 'rom', 'callee'):
             section = {

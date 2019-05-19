@@ -46,9 +46,15 @@ INSTRUCTION_DICT = defaultdict(list)
 for opcode, (_, _, _, _, instruction, _, _) in opcode_dict.iteritems():
     INSTRUCTION_DICT[instruction].append(opcode)
 INSTRUCTION_DICT = dict(INSTRUCTION_DICT)
+BYTE_SELECTOR_FUNCTION_DICT = {
+    'L': lambda x: x & 0xff,
+    'M': lambda x: (x >> 8) & 0xff,
+    'H': lambda x: (x >> 16) & 0xff,
+}
 TOKEN_WORD_LIST = (
     'DB',
     'DW',
+    'DS',
     'EQU',
     'ORG',
     'CHIP',
@@ -79,6 +85,56 @@ class ParserFrame(object):
         self.has_set_origin = True
         self.address = address
 
+class Allocator(object):
+    def __init__(self, start, stop):
+        # List of uninterupted free ranges, smallest first.
+        self.free_list = [[stop - start + 1, start]]
+
+    def allocate(self, length):
+        for entry in self.free_list:
+            free_length, free_start = entry
+            if length < free_length:
+                # Free space after, updzte chunk
+                entry[0] -= length
+                entry[1] += length
+                break
+            elif length == free_length:
+                # No space left in chunk, remove
+                self.free_list.remove(entry)
+                break
+        else:
+            raise MemoryError('No large-enough free memory chunk')
+        self.free_list.sort()
+        return free_start
+
+    def allocateAt(self, at, length):
+        for entry in self.free_list:
+            free_length, free_start = entry
+            free_stop = free_start + free_length
+            stop = at + length
+            if free_start <= at and stop <= free_stop:
+                if free_start < at:
+                    # Free space before, update chunk
+                    entry[0] = at - free_start
+                    if stop < free_stop:
+                        # Free space after, create chunk
+                        self.free_list.append([
+                            free_stop - stop,
+                            stop,
+                        ])
+                elif stop < free_stop:
+                    # Free space after only, update chunk
+                    entry[0] = free_stop - stop
+                    entry[1] = stop
+                else:
+                    # No space left in chunk, remove
+                    self.free_list.remove(entry)
+                break
+        else:
+            raise MemoryError('No large-enough free memory chunk')
+        self.free_list.sort()
+        return free_start
+
 class Assembler(object):
     tokens = (
         'CODE',
@@ -94,6 +150,7 @@ class Assembler(object):
         'CODE_OPTIONS_END',
         'CODE_OPTION',
         'RELATIVE_ADDRESS',
+        'BYTE_SELECTOR',
     ) + TOKEN_WORD_LIST
     literals = '#,:'
     t_ignore = ' \t'
@@ -104,6 +161,13 @@ class Assembler(object):
     t_CODE_OPTIONS_BEGIN = '//{{SONIX_CODE_OPTION'
     t_CODE_OPTIONS_END = '//}}SONIX_CODE_OPTION'
     t_CODE_OPTION = r'\.Code_Option'
+
+    @staticmethod
+    def t_BYTE_SELECTOR(token):
+        r'''\$[HML]'''
+        # Note: must be declare above t_RELATIVE_ADDRESS to have precedence.
+        token.value = BYTE_SELECTOR_FUNCTION_DICT[token.value[1]]
+        return token
 
     @staticmethod
     def t_RELATIVE_ADDRESS(token):
@@ -222,6 +286,12 @@ class Assembler(object):
                 else:
                     address = Address(int(address, 0))
                 self.chip_identifier_dict[name] = address
+        self.ram_allocator = allocator = Allocator(
+            chip['chip']['ram_start'],
+            chip['chip']['ram_stop'],
+        )
+        for start, stop in chip['chip']['ram_reserved'].range_list:
+            allocator.allocateAt(start, stop - start)
 
     @staticmethod
     def p_noop(production):
@@ -339,14 +409,33 @@ class Assembler(object):
         '''
         production[0] = production[1]
 
+    def p_partial_identifier(self, production):
+        '''
+        address : resolved_identifier BYTE_SELECTOR
+        operand : resolved_identifier BYTE_SELECTOR
+        '''
+        value = production[1]
+        if isinstance(value, BitAddress):
+            raise TypeError('Cannot select a byte from a bit address.')
+        production[0] = Address(production[2](value.value))
+
     def p_declaration_address(self, production):
         '''
         declaration : IDENTIFIER EQU address EOL
                     | IDENTIFIER EQU bit_address EOL
         '''
-        # XXX: case-sensitive ?
-        identifier = production[1]
-        value = production[3]
+        self.declare(production[1], production[3])
+
+    def p_declaration_size(self, production):
+        '''
+        declaration : IDENTIFIER DS NUMBER EOL
+        '''
+        self.declare(
+            production[1],
+            Address(self.ram_allocator.allocate(production[3])),
+        )
+
+    def declare(self, identifier, value):
         if self.getIdentifier(identifier, value, acquire=False) != value:
             warnings.warn('Redefining %r (was %r) with different value: %r' % (
                 identifier,

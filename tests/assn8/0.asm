@@ -30,6 +30,13 @@ CHIP SN8F2288
 .DATA
 y_bit_0 EQU   Y.0         ; declaration of a bit address
 just_y  EQU   Y           ; declaration of a byte address
+array0  DS    0x7f        ; ram 0x000 to 0x07e
+byte0   DS    1           ; ram 0x07f
+array1  DS    0x1ff       ; ram 0x100 to 0x2fe
+byte1   DS    1           ; ram 0x2ff
+byte1h  EQU   byte1$H     ; should be 0x00
+byte1m  EQU   byte1$M     ; should be 0x02
+byte1l  EQU   byte1$L     ; should be 0xff
 
 .CODE
 ORG 0 ; decimal
@@ -65,6 +72,20 @@ _non_exported_label:
         JMP   @B
 
         MOV   A, #just_y  ; immediate value from declared identifier
+
+        ; Verify ram allocation and byte selectors
+        MOV   A, array0
+        MOV   A, byte0
+        MOV   A, byte0$L
+        MOV   A, #byte1h
+        MOV   A, #byte1m
+        MOV   A, #byte1l
+        MOV   A, #array1$H
+        MOV   A, #array1$M
+        MOV   A, #array1$L
+        MOV   A, #byte1$H
+        MOV   A, #byte1$M
+        MOV   A, #byte1$L
 
         JMP   $+1         ; 2-cycles, 1-instruction delay
         JMP   label_in_included_file
