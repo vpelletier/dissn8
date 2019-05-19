@@ -41,6 +41,7 @@ ORG 0b1000 ; binary, 0b... form
 
 ORG 0x10 ; hexadecimal, 0x... form
 start:
+_non_exported_label:
         B0MOV Y, #0b      ; binary, 0...b form
         B0MOV Z, #07fh    ; hexadecimal, 0...h form 
 @@:                       ; anonymous label

@@ -16,4 +16,5 @@
 
 .CODE
 label_in_included_file:
+_non_exported_label:
         NOP
