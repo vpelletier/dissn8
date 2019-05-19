@@ -17,14 +17,14 @@
 CHIP SN8F2288
 
 //{{SONIX_CODE_OPTION
-	.Code_Option	Fcpu		"Fosc/4"
-	.Code_Option	Fslow		"Flosc/2"
-	.Code_Option	High_CLK	"12M_X'tal"
-	.Code_Option	LVD		"LVD_M"
-	.Code_Option	Reset_Pin	"P07"
-	.Code_Option	Rst_Length	"No"
-	.Code_Option	Security	"Enable"
-	.Code_Option	Watch_Dog	"Enable"
+        .Code_Option    Fcpu            "Fosc/4"
+        .Code_Option    Fslow           "Flosc/2"
+        .Code_Option    High_CLK        "12M_X'tal"
+        .Code_Option    LVD             "LVD_M"
+        .Code_Option    Reset_Pin       "P07"
+        .Code_Option    Rst_Length      "No"
+        .Code_Option    Security        "Enable"
+        .Code_Option    Watch_Dog       "Enable"
 //}}SONIX_CODE_OPTION
 
 .DATA
