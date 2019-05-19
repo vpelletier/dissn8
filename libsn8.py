@@ -140,6 +140,9 @@ def JUMPI(
     Keep track of what jumped to where and declare a label if missing.
     """
     entry_stack.append((operand, function))
+    if operand == addr + 1:
+        # Delay jump
+        return
     jumper_dict[operand].append(addr)
     if operand not in rom_symbol_dict:
         if function is None:

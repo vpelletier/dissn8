@@ -95,6 +95,7 @@ class Assembler(object):
         'CODE_OPTIONS_BEGIN',
         'CODE_OPTIONS_END',
         'CODE_OPTION',
+        'RELATIVE_ADDRESS',
     ) + TOKEN_WORD_LIST
     literals = '#,:'
     t_ignore = ' \t'
@@ -104,7 +105,13 @@ class Assembler(object):
     t_ALIGN = r'\.ALIGN'
     t_CODE_OPTIONS_BEGIN = '//{{SONIX_CODE_OPTION'
     t_CODE_OPTIONS_END = '//}}SONIX_CODE_OPTION'
-    t_CODE_OPTION = '\\.Code_Option'
+    t_CODE_OPTION = r'\.Code_Option'
+
+    @staticmethod
+    def t_RELATIVE_ADDRESS(token):
+        r'''\$([+-][0-9]+)?'''
+        token.value = int(token.value[1:], 0) if len(token.value) > 1 else 0
+        return token
 
     @staticmethod
     def t_QUOTED_STRING(token):
@@ -544,6 +551,12 @@ class Assembler(object):
         if not isinstance(address, Address):
             raise TypeError('Wrong identifier type for immediate')
         production[0] = Immediate(address.value)
+
+    def p_operand_relative_address(self, production):
+        '''
+        operand : RELATIVE_ADDRESS
+        '''
+        production[0] = Address(self.address + production[1])
 
     @staticmethod
     def p_empty(production):

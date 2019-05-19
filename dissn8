@@ -132,7 +132,10 @@ def disassemble(address, instruction, function):
                 else:
                     symbol = bit_symbol
         if symbol is None:
-            symbol = operand_fmt % operand
+            if jump_action is JUMPI and operand == address + 1:
+                symbol = '$+1'
+            else:
+                symbol = operand_fmt % operand
         if opspace in (ZRO_SPACE, RAM_SPACE):
             ram_symbol_usage_dict[symbol].append((address, opmode))
         if jump_action is BRNCH:
@@ -148,9 +151,10 @@ def disassemble(address, instruction, function):
                 (address + 2, '%s == %s' % (lhs, rhs), 'green'),
             )
         elif jump_action is JUMPI:
-            jump_dict[address] = (
-                (operand, None, 'black'),
-            )
+            if operand != address + 1:
+                jump_dict[address] = (
+                    (operand, None, 'black'),
+                )
         operand_caption = ', '.join(
             x if isinstance(x, basestring) else symbol
             for x in (left_operand, right_operand)

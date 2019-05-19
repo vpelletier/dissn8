@@ -50,6 +50,7 @@ start:
 
         MOV   A, #just_y  ; immediate value from declared identifier
 
+        JMP   $+1         ; 2-cycles, 1-instruction delay
         JMP   label_in_included_file
 
 .ALIGN 32
@@ -58,7 +59,7 @@ INCLUDE "0.inc.0.asm"
 
 .ALIGN 0x20
 halt_and_catch_fire:
-        JMP   halt_and_catch_fire
+        JMP   $
 
 .ALIGN 0b00100000
         DW    0xffff, 'F', 'o', 'o', 0x0000
