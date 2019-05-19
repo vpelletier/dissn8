@@ -209,8 +209,9 @@ class Assembler(object):
         chip : CHIP IDENTIFIER EOL
         '''
         if self.chip is not None:
-            raise SyntaxError('%s:%i: Redefining chip type.' % (
-
+            raise ValueError('%s:%i: Redefining chip type.' % (
+                self.filename,
+                production.lineno(1),
             ))
         with open(
             os.path.join(CONFIG_DIR, production[2].lower() + '.cfg'),
@@ -218,8 +219,8 @@ class Assembler(object):
             chip = parseConfig([config])
         self.chip = chip
         # Sanity check
-        if chip['chip']['name'] != production[2]:
-            raise ValueError('Inconsistent config file')
+        if chip['chip']['name'].lower() != production[2].lower():
+            raise ValueError('Inconsistent chip config file: %r' % config.name)
         for address, mask, value_names in chip['code-option'].itervalues():
             if mask == 0:
                self.rom[address] = value_names # Actually a single value
