@@ -189,15 +189,6 @@ class Assembler(object):
                 ', '.join(self.label_referer_dict),
             ))
 
-    @staticmethod
-    def p_early_includes(production):
-        '''
-        early_includes : early_includes include
-                       | early_includes EOL
-                       | empty
-        '''
-        pass
-
     def p_chip(self, production):
         '''
         chip : CHIP IDENTIFIER EOL
@@ -233,18 +224,29 @@ class Assembler(object):
                 self.chip_identifier_dict[name] = address
 
     @staticmethod
-    def p_code_option_block(production):
+    def p_noop(production):
         '''
+        early_includes : early_includes include
+                       | early_includes EOL
+                       | empty
         code_options_block : CODE_OPTIONS_BEGIN EOL code_options CODE_OPTIONS_END EOL
-        '''
-        pass
-
-    @staticmethod
-    def p_code_options(production):
-        '''
         code_options : code_options code_option
                      | code_options EOL
                      | empty
+        sections : sections section
+                 | empty
+        section : CODE EOL emitables
+                | DATA EOL declarations
+                | code_options_block
+                | chip
+        declarations : declarations declaration
+                     | declarations EOL
+                     | empty
+        emitables : emitables emitable
+                  | emitables EOL
+                  | empty
+        emitable : include
+        empty :
         '''
         pass
 
@@ -264,24 +266,6 @@ class Assembler(object):
         self.rom[address] |= {
             y: x for x, y in value_names.iteritems()
         }[production[3]] << shift
-
-    @staticmethod
-    def p_sections(production):
-        '''
-        sections : sections section
-                 | empty
-        '''
-        pass
-
-    @staticmethod
-    def p_section(production):
-        '''
-        section : CODE EOL emitables
-                | DATA EOL declarations
-                | code_options_block
-                | chip
-        '''
-        pass
 
     def p_include(self, production):
         '''
@@ -317,44 +301,43 @@ class Assembler(object):
                     break
 
     @staticmethod
-    def p_declarations(production):
+    def p_bit_address(production):
         '''
-        declarations : declarations declaration
-                     | declarations EOL
-                     | empty
+        bit_address : address BIT_SELECTOR
         '''
-        pass
-
-    @staticmethod
-    def p_bit_address_number(production):
-        '''
-        bit_address : NUMBER BIT_SELECTOR
-        '''
-        production[0] = BitAddress(production[1], production[2])
-
-    def p_bit_address_identifier(self, production):
-        '''
-        bit_address : IDENTIFIER BIT_SELECTOR
-        '''
-        identifier = production[1]
-        try:
-            address = self.getIdentifier(identifier).value
-        except KeyError:
-            raise NameError(identifier)
-        production[0] = BitAddress(address, production[2])
+        address = production[1]
+        if isinstance(address, BitAddress):
+            raise TypeError('%s:%i: %r is already a bit address.' % (
+                self.filename,
+                production.lineno(1),
+                address,
+            ))
+        production[0] = BitAddress(address.value, production[2])
 
     @staticmethod
     def p_address_number(production):
-        """
+        '''
         address : NUMBER
-        """
+        operand : NUMBER
+        '''
         production[0] = Address(production[1])
 
-    def p_address_identifier(self, production):
-        """
-        address : IDENTIFIER
-        """
-        production[0] = self.getIdentifier(production[1])
+    def p_identifier(self, production):
+        '''
+        resolved_identifier : IDENTIFIER
+        '''
+        try:
+            production[0] = self.getIdentifier(production[1])
+        except KeyError:
+            raise NameError(production[1])
+
+    @staticmethod
+    def p_passthrough(production):
+        '''
+        address : resolved_identifier
+        operand : bit_address
+        '''
+        production[0] = production[1]
 
     def p_declaration_address(self, production):
         '''
@@ -371,22 +354,6 @@ class Assembler(object):
                 value,
             ))
         self.setIdentifier(identifier, value)
-
-    @staticmethod
-    def p_emitables(production):
-        '''
-        emitables : emitables emitable
-                  | emitables EOL
-                  | empty
-        '''
-        pass
-
-    @staticmethod
-    def p_emitable_include(production):
-        '''
-        emitable : include
-        '''
-        pass
 
     def p_emitable_org_number(self, production):
         '''
@@ -499,27 +466,6 @@ class Assembler(object):
         '''
         self.writeInstruction(production[1], production[2], production[4])
 
-    @staticmethod
-    def p_operand_immediate(production):
-        '''
-        operand : '#' NUMBER
-        '''
-        production[0] = Immediate(production[2])
-
-    @staticmethod
-    def p_operand_address(production):
-        '''
-        operand : NUMBER
-        '''
-        production[0] = Address(production[1])
-
-    @staticmethod
-    def p_operand_bit_address(production):
-        '''
-        operand : bit_address
-        '''
-        production[0] = production[1]
-
     def p_operand_identifier(self, production):
         '''
         operand : IDENTIFIER
@@ -537,12 +483,9 @@ class Assembler(object):
 
     def p_operand_immediate_identifier(self, production):
         '''
-        operand : '#' IDENTIFIER
+        operand : '#' address
         '''
-        try:
-            address = self.getIdentifier(production[2])
-        except KeyError:
-            raise NameError(production[2])
+        address = production[2]
         if not isinstance(address, Address):
             raise TypeError('Wrong identifier type for immediate')
         production[0] = Immediate(address.value)
@@ -552,13 +495,6 @@ class Assembler(object):
         operand : RELATIVE_ADDRESS
         '''
         production[0] = Address(self.address + production[1])
-
-    @staticmethod
-    def p_empty(production):
-        '''
-        empty :
-        '''
-        pass
 
     def p_error(self, production):
         raise SyntaxError("%s:%i: Syntax error, unexpected %s: %r" % (
