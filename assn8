@@ -558,19 +558,19 @@ class Assembler(object):
         '''
         emitable : INSTRUCTION EOL
         '''
-        self.writeInstruction(production[1])
+        self.writeInstruction(production.lineno(1), production[1])
 
     def p_emitable_insn_1(self, production):
         '''
         emitable : INSTRUCTION operand EOL
         '''
-        self.writeInstruction(production[1], production[2])
+        self.writeInstruction(production.lineno(1), production[1], production[2])
 
     def p_emitable_insn_2(self, production):
         '''
         emitable : INSTRUCTION operand ',' operand EOL
         '''
-        self.writeInstruction(production[1], production[2], production[4])
+        self.writeInstruction(production.lineno(1), production[1], production[2], production[4])
 
     def p_operand_identifier(self, production):
         '''
@@ -580,7 +580,14 @@ class Assembler(object):
         try:
             production[0] = self.getIdentifier(identifier)
         except KeyError:
-            exception = NameError(identifier)
+            exception = NameError(
+                '%s:%i: Undefined identifier: %r' % (
+                    self.filename,
+                    production.lineno(1),
+                    identifier,
+                ),
+                identifier,
+            )
             if identifier == AUTO_LABEL_BACKWARD:
                 # Backward references must always be immediately resolvable.
                 # Otherwise a "@@" label is missing.
@@ -744,11 +751,15 @@ class Assembler(object):
         self.rom[self.address] = value
         self.address += 1
 
-    def writeInstruction(self, name, left=NO_OPERAND, right=NO_OPERAND):
+    def writeInstruction(self, lineno, name, left=NO_OPERAND, right=NO_OPERAND):
         try:
             opcode_list = INSTRUCTION_DICT[name]
         except KeyError:
-            raise NameError('No such instruction: %r' % name)
+            raise NameError('%s: %i: No such instruction: %r' % (
+                self.filename,
+                lineno,
+                name,
+            ))
         for opcode in opcode_list:
             mask, space, _, _, _, left_type, right_type = opcode_dict[opcode]
             if space is ROM_SPACE and isinstance(left, NameError):
@@ -756,7 +767,7 @@ class Assembler(object):
                 # Mask sanity check
                 assert mask == 0x3fff
                 # Remember address for label...
-                self.label_referer_dict[left.args[0]].append(self.address)
+                self.label_referer_dict[left.args[1]].append(self.address)
                 # ... and use placeholder
                 left = Address(0)
             if space in (RAM_SPACE, ZRO_SPACE):
@@ -787,7 +798,9 @@ class Assembler(object):
                     operand = operand_org & mask
                     if operand != operand_org:
                         raise ValueError(
-                            'Operand too large for instruction %r: %x' % (
+                            '%s:%s: Operand too large for instruction %r: %x' % (
+                                self.filename,
+                                lineno,
                                 name,
                                 operand_org,
                             ),
@@ -796,7 +809,9 @@ class Assembler(object):
                 self.write(opcode)
                 break
         else:
-            raise NameError('No opcode suitable for %r %r, %r' % (
+            raise NameError('%s:%i: No opcode suitable for %r %r, %r' % (
+                self.filename,
+                lineno,
                 name,
                 left,
                 right,
