@@ -430,9 +430,17 @@ class Assembler(object):
         '''
         declaration : IDENTIFIER DS NUMBER EOL
         '''
+        byte_count = production[3]
+        if byte_count < 1:
+            raise ValueError(
+                '%s:%i: Trying to allocate less than one byte.' % (
+                    self.filename,
+                    production.lineno(1),
+                ),
+            )
         self.declare(
             production[1],
-            Address(self.ram_allocator.allocate(production[3])),
+            Address(self.ram_allocator.allocate(byte_count)),
         )
 
     def declare(self, identifier, value):
