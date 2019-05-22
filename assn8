@@ -248,9 +248,18 @@ class Assembler(object):
              | early_includes sections
         '''
         self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
-        if self.label_referer_dict:
-            raise NameError('Undefined labels: %s' % (
-                ', '.join(self.label_referer_dict),
+        if len(self._parser_stack) == 1:
+            # Any remaining undefined label is an error.
+            undefined_identifier_list = self.label_referer_dict.keys()
+        else:
+            # Only local undefined labels are an error.
+            undefined_identifier_list = [
+                x for x in self.label_referer_dict if x.startswith('_')
+            ]
+        if undefined_identifier_list:
+            undefined_identifier_list.sort()
+            raise NameError('Undefined labels:\n  %s' % (
+                '\n  '.join(undefined_identifier_list),
             ))
 
     def p_chip(self, production):
@@ -648,6 +657,10 @@ class Assembler(object):
                 print('Left %r' % source_file)
         if parent_frame is not None:
             parent_frame.address = frame.address_until_origin
+            for key, value in frame.label_referer_dict.iteritems():
+                if key.startswith('_'):
+                    continue
+                parent_frame.label_referer_dict[key].extend(value)
             for key, value in frame.identifier_dict.iteritems():
                 if key.startswith('_'):
                     # Do not export symbols starting with an underscore.
