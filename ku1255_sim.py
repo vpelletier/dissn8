@@ -393,6 +393,7 @@ class KU1255(object):
         deadline = cpu.run_time + timeout
         step = self.step
         self.usb_is_setup_read = False
+        waitRETI(self)
         usb.sendSETUP(request_type, request, value, index, length)
         while not self.usb_is_setup_read and cpu.run_time < deadline:
             step()
@@ -407,6 +408,7 @@ class KU1255(object):
         deadline = cpu.run_time + timeout
         step = self.step
         self.usb_is_setup_read = False
+        waitRETI(self)
         usb.sendSETUP(request_type, request, value, index, len(data))
         while not self.usb_is_setup_read and cpu.run_time < deadline:
             step()
@@ -543,6 +545,67 @@ class KU1255(object):
             timeout,
         )
 
+    def getHIDReport(self, report_type, report_id, interface, length, timeout=5):
+        return self.controlRead(
+            0b10100001,
+            1,
+            (report_type << 8) | report_id,
+            interface,
+            length,
+            timeout,
+        )
+
+    def getHIDIdle(self, report_id, interface, timeout=5):
+        return ord(self.controlRead(
+            0b10100001,
+            2,
+            report_id,
+            interface,
+            1,
+            timeout,
+        ))
+
+    def getHIDProtocol(self, interface, timeout=5):
+        return ord(self.controlRead(
+            0b10100001,
+            3,
+            0,
+            interface,
+            1,
+            timeout,
+        ))
+
+    def setHIDReport(self, report_type, report_id, interface, data, timeout=5):
+        self.controlWrite(
+            0b00100001,
+            9,
+            (report_type << 8) | report_id,
+            interface,
+            data,
+            timeout,
+        )
+
+    def setHIDIdle(self, report_id, interface, duration, timeout=5):
+        self.controlWrite(
+            0b00100001,
+            10,
+            (duration << 8) | report_id,
+            interface,
+            '',
+            timeout,
+        )
+
+    def setHIDProtocol(self, interface, protocol, timeout=5):
+        self.controlWrite(
+            0b00100001,
+            11,
+            protocol,
+            interface,
+            '',
+            timeout,
+        )
+
+
     def onUSBWakeupRequest(self):
         self.usb_is_wakeup_requested = True
 
@@ -634,31 +697,51 @@ def main():
     device.cpu.usb.reset = False
     device_descriptor_head = device.getDescriptor(1, 8)
     print 'pre-address device desc:', hexdump(device_descriptor_head)
-    waitRETI(device)
     device.setAddress(1)
-    waitRETI(device)
     device_descriptor_head = device.getDescriptor(1, 8)
     print 'post-address device desc:', hexdump(device_descriptor_head)
-    waitRETI(device)
     total_length = byte_ord(device_descriptor_head[0])
     device_descriptor = device.getDescriptor(1, total_length)
     print 'full device desc:', hexdump(device_descriptor)
-    waitRETI(device)
     config_descriptor_head = device.getDescriptor(2, 8)
     print 'config desc head:', hexdump(config_descriptor_head)
-    waitRETI(device)
     total_length, = unpack('<H', config_descriptor_head[2:4])
     print 'len', total_length
-    waitRETI(device)
     config_descriptor = device.getDescriptor(2, total_length)
     print 'config desc:', hexdump(config_descriptor)
-    waitRETI(device)
     device.setConfiguration(1)
-    waitRETI(device)
-    print device.getConfiguration()
-    waitRETI(device)
-    print device.getInterface(0)
-    waitRETI(device)
+    print 'active configuration:', device.getConfiguration()
+    print 'interface 0 active alt setting:', device.getInterface(0)
+    print 'interface 1 active alt setting:', device.getInterface(1)
+    print 'HID protocol interface 0:', device.getHIDProtocol(0)
+    print 'HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)'
+    print 'HID protocol interface 1:', device.getHIDProtocol(1)
+    print 'HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)'
+    hid_descriptor_ep1 = device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
+    print 'HID descr interface 0:', hexdump(hid_descriptor_ep1)
+    report_0_length = (
+        1 * 8 + # modifier keys
+        1 * 8 + # padding
+        5 * 1 + # leds
+        3 * 1 + # padding
+        6 * 8 + # keys ?
+        8 * 8   # ?
+    ) / 8 # XXX: should HID config_descriptor
+    assert int(report_0_length) == report_0_length, report_0_length
+    report_0_length = int(report_0_length)
+    hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1) # XXX: should parse config_descriptor
+    print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
+    report_1_length = (
+        1 * 5 + # buttons
+        3 * 1 + # padding
+        2 * 8 + # axes
+        1 * 8 + # wheel
+        1 * 8   # hwheel
+    ) / 8 # XXX: should HID config_descriptor
+    assert int(report_1_length) == report_1_length, report_1_length
+    report_1_length = int(report_1_length)
+    print 'saved fnLock state:', device.getSavedFnLock()
+    print 'saved mouse speed:', device.getSavedMouseSpeed()
     deadline = device.cpu.run_time + 200
     while device.mouse_initialisation_state != MOUSE_INITIALISED and device.cpu.run_time < deadline:
         device.step()
