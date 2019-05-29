@@ -323,6 +323,8 @@ class USB(object):
             cpu.EP4FIFO_ADDR,
             0x136,
         )[endpoint:endpoint + 2]
+        if stop == 0:
+            stop = 0x136
         data_len = len(data)
         if data_len > stop - start:
             raise ValueError('Data too long for endpoint buffer')
