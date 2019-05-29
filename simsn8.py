@@ -651,7 +651,7 @@ class Port(object):
                     else:
                         # Voltage divisor:
                         # Vdd-{pull_up_impedance}-pin-{load_impedance}-load_voltage
-                        voltage = (self.vdd - load_voltage) * load_impedance / (load_impedance + self.pull_up_impedance)
+                        voltage = self.vdd - ((self.vdd - load_voltage) / (load_impedance + self.pull_up_impedance)) * self.pull_up_impedance
                 else:
                     voltage = load_voltage
                 if voltage > self.min_one:
