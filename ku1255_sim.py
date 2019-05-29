@@ -476,7 +476,7 @@ class KU1255(object):
         )
 
     def getStatus(self, recipient, index, timeout=5):
-        return byte_ord(self.controlRead(
+        return unpack('<H', self.controlRead(
             0x80 | recipient,
             0,
             0,
@@ -486,7 +486,7 @@ class KU1255(object):
         ))
 
     def getConfiguration(self, timeout=5):
-        return byte_ord(self.controlRead(
+        return ord(self.controlRead(
             0x80,
             8,
             0,
@@ -506,7 +506,7 @@ class KU1255(object):
         )
 
     def getInterface(self, interface, timeout=5):
-        return byte_ord(self.controlRead(
+        return ord(self.controlRead(
             0x81,
             10,
             0,
