@@ -417,7 +417,7 @@ class KU1255(object):
         # Hardcoded max packet size, as it is fixed by spu for endpoint 0
         self._writeEP(0, data, 8, deadline)
 
-    def readEP(self, endpoint, length, timeout=5):
+    def readEP(self, endpoint, length, max_packet_size, timeout=5):
         return self._readEP(endpoint, length, max_packet_size, self.cpu.run_time + timeout)
 
     def writeEP(self, endpoint, data, max_packet_size, timeout=5):
