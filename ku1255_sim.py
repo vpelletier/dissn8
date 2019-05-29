@@ -363,13 +363,17 @@ class KU1255(object):
     def pressKey(self, row, column):
         assert row >= 0
         assert column >= 0
-        self.row_list_by_column[column].add(self.matrix[row])
+        if row in self.row_list_by_column[column]:
+            raise ValueError('Key at %ix%i already pressed' % (row, column))
+        self.row_list_by_column[column].append(row)
         self.column_list_by_row[row].append(column)
 
     def releaseKey(self, row, column):
         assert row >= 0
         assert column >= 0
-        self.row_list_by_column[column].discard(self.matrix[row])
+        if row not in self.row_list_by_column[column]:
+            raise ValueError('Key at %ix%i already released' % (row, column))
+        self.row_list_by_column[column].remove(row)
         self.column_list_by_row[row].remove(column)
 
     def setMouseState(self, x, y, left, middle, right):
