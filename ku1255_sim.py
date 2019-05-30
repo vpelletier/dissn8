@@ -20,7 +20,7 @@ from collections import defaultdict
 from functools import partial
 from struct import unpack
 import warnings
-from simsn8 import SN8F2288, INF
+from simsn8 import SN8F2288, INF, EndpointStall, EndpointNAK
 
 try:
     _ = ord(b'\x00'[0])
@@ -613,7 +613,6 @@ class KU1255(object):
             timeout,
         )
 
-
     def onUSBWakeupRequest(self):
         self.usb_is_wakeup_requested = True
 
@@ -703,30 +702,35 @@ def main():
     while device.cpu.run_time < deadline:
         device.step()
     device.cpu.usb.reset = False
-    device_descriptor_head = device.getDescriptor(1, 8)
-    print 'pre-address device desc:', hexdump(device_descriptor_head)
+    # Based on linux enumeration sequence
+    device_descriptor = device.getDescriptor(1, 8)
+    print 'pre-address device desc:', hexdump(device_descriptor)
     device.setAddress(1)
-    device_descriptor_head = device.getDescriptor(1, 8)
-    print 'post-address device desc:', hexdump(device_descriptor_head)
-    total_length = byte_ord(device_descriptor_head[0])
+    total_length = byte_ord(device_descriptor[0])
     device_descriptor = device.getDescriptor(1, total_length)
     print 'full device desc:', hexdump(device_descriptor)
-    config_descriptor_head = device.getDescriptor(2, 8)
+    for _ in xrange(3):
+        try:
+            device_qualifier = device.getDescriptor(6, 0x0a)
+        except EndpointStall:
+            continue
+        else:
+            print 'device qualifier:', hexdump(device_qualifier)
+            break
+    config_descriptor_head = device.getDescriptor(2, 9)
     print 'config desc head:', hexdump(config_descriptor_head)
     total_length, = unpack('<H', config_descriptor_head[2:4])
     print 'len', total_length
     config_descriptor = device.getDescriptor(2, total_length)
     print 'config desc:', hexdump(config_descriptor)
+    first_supported_language, = unpack('<H', device.getDescriptor(3, 255)[2:4])
+    print 'string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language)[2:].decode('utf-16')
+    print 'string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16')
     device.setConfiguration(1)
-    print 'active configuration:', device.getConfiguration()
-    print 'interface 0 active alt setting:', device.getInterface(0)
-    print 'interface 1 active alt setting:', device.getInterface(1)
-    print 'HID protocol interface 0:', device.getHIDProtocol(0)
-    print 'HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)'
-    print 'HID protocol interface 1:', device.getHIDProtocol(1)
-    print 'HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)'
+    device.setHIDIdle(0, 0, 0)
     hid_descriptor_ep1 = device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
     print 'HID descr interface 0:', hexdump(hid_descriptor_ep1)
+    device.setHIDReport(2, 0, 0, b'\x00')
     report_0_length = (
         1 * 8 + # modifier keys
         1 * 8 + # padding
@@ -737,6 +741,11 @@ def main():
     ) / 8 # XXX: should HID config_descriptor
     assert int(report_0_length) == report_0_length, report_0_length
     report_0_length = int(report_0_length)
+    try:
+        device.readEP(1, report_0_length, 63)
+    except Timeout:
+        pass
+    device.setHIDIdle(0, 1, 0)
     hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1) # XXX: should parse config_descriptor
     print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
     report_1_length = (
@@ -748,6 +757,23 @@ def main():
     ) / 8 # XXX: should HID config_descriptor
     assert int(report_1_length) == report_1_length, report_1_length
     report_1_length = int(report_1_length)
+    try:
+        device.readEP(2, report_1_length, 63)
+    except Timeout:
+        pass
+    device.setHIDReport(3, 0x13, 1, b'\x13\x01\x03')
+    device.setHIDReport(3, 0x13, 1, b'\x13\x05\x01')
+    device.setHIDReport(3, 0x13, 1, b'\x13\x02\x05')
+
+    # Exercising other standard requests
+    print 'active configuration:', device.getConfiguration()
+    print 'interface 0 active alt setting:', device.getInterface(0)
+    print 'interface 1 active alt setting:', device.getInterface(1)
+    print 'HID protocol interface 0:', device.getHIDProtocol(0)
+    print 'HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)'
+    print 'HID protocol interface 1:', device.getHIDProtocol(1)
+    print 'HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)'
+
     print 'saved fnLock state:', device.getSavedFnLock()
     print 'saved mouse speed:', device.getSavedMouseSpeed()
     deadline = device.cpu.run_time + 200
