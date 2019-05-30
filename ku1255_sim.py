@@ -324,8 +324,8 @@ class KU1255(object):
                 row_set.update(self.row_list_by_column[column])
             for row in row_set:
                 column_set.update(self.column_list_by_row[row])
-        for getInternalAsLoad in self.row_list_by_column[column]:
-            voltage, impedance = getInternalAsLoad()
+        for row in row_set:
+            voltage, impedance = self.matrix[row]()
             if impedance != INF:
                 impedance_by_voltage[voltage].append(impedance)
         for key, value in impedance_by_voltage.items():
