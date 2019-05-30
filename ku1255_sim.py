@@ -76,7 +76,6 @@ class KU1255(object):
         usb.on_wake_signaling = self.onUSBWakeupRequest
         usb.on_enable_change = self.onUSBEnableChange
         usb.on_ep_enable_change = self.onUSBEPEnableChange
-        usb.on_ep_event_available = self.onUSBEPEventAvailable
         usb.on_setup_read = self.onUSBSETUPRead
         # Bit-banging I2C device emulation (mouse)
         cpu.p2.setLoad(4, self.getI2CSCLLoad)
@@ -152,7 +151,6 @@ class KU1255(object):
         # USB
         self.usb_is_setup_read = False
         self.usb_is_enabled = False
-        self.usb_ep_has_event = [False] * 5
         self.usb_is_endpoint_enabled = [True, False, False, False, False]
         self.usb_is_wakeup_requested = False
         # I2C
@@ -431,36 +429,49 @@ class KU1255(object):
     def writeEP(self, endpoint, data, max_packet_size, timeout=5):
         self._writeEP(endpoint, data, max_packet_size, self.cpu.run_time + timeout)
 
-    def _readEP(self, endpoint, length, max_packet_size, deadline):
+    def _waitForAckOrStall(self, endpoint, deadline):
         cpu = self.cpu
-        usb = cpu.usb
         step = self.step
+        stall_attr_name = (
+            'FUE0M1',
+            'FUE1M1',
+            'FUE2M1',
+            'FUE3M1',
+            'FUE4M1',
+        )[endpoint]
+        ack_attr_name = (
+            'FUE0M0',
+            'FUE1M0',
+            'FUE2M0',
+            'FUE3M0',
+            'FUE4M0',
+        )[endpoint]
+        while cpu.run_time < deadline:
+            if getattr(cpu, stall_attr_name):
+                raise EndpointStall
+            if getattr(cpu, ack_attr_name):
+                return
+            step()
+        raise Timeout('Endpoint still NAKs')
+
+    def _readEP(self, endpoint, length, max_packet_size, deadline):
+        recv = self.cpu.usb.recv
         result = b''
         while True:
-            self.usb_ep_has_event[endpoint] = False
-            while not self.usb_ep_has_event[endpoint] and cpu.run_time < deadline:
-                step()
-            if not self.usb_ep_has_event[endpoint]:
-                raise Timeout('IN still NAKed by cpu')
+            self._waitForAckOrStall(endpoint, deadline)
             waitRETI(self)
-            chunk = usb.recv(endpoint)
+            chunk = recv(endpoint)
             result += chunk
             if len(result) == length or len(chunk) < max_packet_size:
                 break
         return result
 
     def _writeEP(self, endpoint, data, max_packet_size, deadline):
-        cpu = self.cpu
-        usb = cpu.usb
-        step = self.step
+        send = self.cpu.usb.send
         while data:
-            self.usb_ep_has_event[endpoint] = False
             waitRETI(self)
-            usb.send(endpoint, data[:max_packet_size])
-            while not self.usb_ep_has_event[endpoint] and cpu.run_time < deadline:
-                step()
-            if not self.usb_ep_has_event[endpoint]:
-                raise Timeout('OUT still NAKed by cpu')
+            send(endpoint, data[:max_packet_size])
+            self._waitForAckOrStall(endpoint, deadline)
             data = data[max_packet_size:]
 
     def clearFeature(self, recipient, feature, index=0, timeout=5):
@@ -621,18 +632,6 @@ class KU1255(object):
 
     def onUSBEPEnableChange(self, endpoint, is_enabled):
         self.usb_is_endpoint_enabled[endpoint] = is_enabled
-
-    def onUSBEPEventAvailable(self, endpoint):
-        cpu = self.cpu
-        if [
-            cpu.FUE0M1,
-            cpu.FUE1M1,
-            cpu.FUE2M1,
-            cpu.FUE3M1,
-            cpu.FUE4M1,
-        ][endpoint]:
-            raise EndpointStall
-        self.usb_ep_has_event[endpoint] = True
 
     def onUSBSETUPRead(self):
         self.usb_is_setup_read = True
