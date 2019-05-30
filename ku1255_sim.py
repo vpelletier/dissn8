@@ -781,6 +781,9 @@ def main():
         device.step()
     if device.mouse_initialisation_state != MOUSE_INITIALISED:
         raise Timeout('Mouse not initialised')
+    device.setMouseState(1, -1, True, False, False)
+    report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    print 'report    interface 1:', hexdump(report_ep2)
     return
     device.trace = True
     while True:
