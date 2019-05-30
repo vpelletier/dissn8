@@ -205,10 +205,10 @@ class KU1255(object):
                         # ack/nack bit
                         if self.i2c_sending:
                             if sda:
-                                print 'CPU NACK'
+                                #print 'CPU NACK'
                                 self.i2c_state = I2C_IGNORE
-                            else:
-                                print 'CPU ACK'
+                            #else:
+                            #    print 'CPU ACK'
                 else:
                     #print '%10.3fms SCL falling edge sda=%i bit_count=%i byte=%#04x' % (self.cpu.run_time, sda, self.i2c_bit_count, self.i2c_current_byte)
                     # Falling clock edge
@@ -240,7 +240,7 @@ class KU1255(object):
                                 self.i2c_state = I2C_IGNORE
                             else:
                                 self.i2c_buffer_index += 1
-                                print 'Sending %#04x' % self.i2c_current_byte
+                                #print 'Sending %#04x' % self.i2c_current_byte
                                 self.sda_float = bool(self.i2c_current_byte & 0x80)
                                 #print 'Sending bit %i, sda_float=%i' % (self.i2c_bit_count, self.sda_float)
                                 self.i2c_current_byte = (self.i2c_current_byte << 1) & 0xff
@@ -252,10 +252,10 @@ class KU1255(object):
             self.i2c_previous_sda = sda
             if scl:
                 if sda:
-                    print '%10.3fms stop condition' % (self.cpu.run_time, )
+                    #print '%10.3fms stop condition' % (self.cpu.run_time, )
                     self.i2c_state = I2C_IDLE
                 else:
-                    print '%10.3fms start condition' % (self.cpu.run_time, )
+                    #print '%10.3fms start condition' % (self.cpu.run_time, )
                     self.i2c_state = I2C_ADDRESS
                 # Stop/start/restart condition
                 self.i2c_bit_count = -1
@@ -265,13 +265,13 @@ class KU1255(object):
     def i2c_onByteReceived(self):
         if self.i2c_state == I2C_ADDRESS:
             if self.i2c_current_byte == self.i2c_read_address:
-                print 'Received read address, asserting SDA'
+                #print 'Received read address, asserting SDA'
                 self.sda_float = False # ACK
                 self.i2c_sending_next = True
                 self.i2c_buffer_index = 0
                 self.i2c_state = I2C_DATA
             elif self.i2c_current_byte == self.i2c_write_address:
-                print 'Received write address, asserting SDA'
+                #print 'Received write address, asserting SDA'
                 self.sda_float = False # ACK
                 self.i2c_in_buffer = []
                 self.i2c_state = I2C_DATA
@@ -279,7 +279,7 @@ class KU1255(object):
                 #print 'Received another address, ignoring until next stop condition'
                 self.i2c_state = I2C_IGNORE
         elif self.i2c_state == I2C_DATA:
-            print 'Received data byte %#04x' % self.i2c_current_byte
+            #print 'Received data byte %#04x' % self.i2c_current_byte
             self.i2c_in_buffer.append(self.i2c_current_byte)
             if self.i2c_in_buffer == [0xfc]:
                 self.mouse_initialisation_state = MOUSE_INIT1
