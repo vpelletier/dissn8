@@ -382,15 +382,19 @@ class USB(object):
         elif endpoint == 1:
             cpu.FUE1M0 = 0
             cpu.UE1R_C = length
+            cpu.FEP1_ACK = 1
         elif endpoint == 2:
             cpu.FUE2M0 = 0
             cpu.UE2R_C = length
+            cpu.FEP2_ACK = 1
         elif endpoint == 3:
             cpu.FUE3M0 = 0
             cpu.UE3R_C = length
+            cpu.FEP3_ACK = 1
         elif endpoint == 4:
             cpu.FUE4M0 = 0
             cpu.UE4R_C = length
+            cpu.FEP4_ACK = 1
         self._interrupt()
 
     def recv(self, endpoint):
