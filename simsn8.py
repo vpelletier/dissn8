@@ -303,7 +303,7 @@ class USB(object):
         cpu.FEP0SETUP = 1
         self._interrupt()
 
-    def send(self, endpoint, data):
+    def _checkEndpoint(self, endpoint):
         cpu = self.cpu
         if not cpu.FUDE:
             raise RuntimeError('USB is disabled')
@@ -315,58 +315,13 @@ class USB(object):
             cpu.FUE4EN,
         )[endpoint]:
             raise RuntimeError('Endpoint is disabled')
-        start, stop = (
-            0,
-            8,
-            cpu.EP2FIFO_ADDR,
-            cpu.EP3FIFO_ADDR,
-            cpu.EP4FIFO_ADDR,
-            0x136,
-        )[endpoint:endpoint + 2]
-        if stop == 0:
-            stop = 0x136
-        data_len = len(data)
-        if data_len > stop - start:
-            raise ValueError('Data too long for endpoint buffer')
-        for index, value in enumerate(data, start):
-            self.epbuf[index] = byte_ord(value)
-        if endpoint == 0:
-            cpu.FUE0M0 = 0
-            cpu.EP0OUT_CNT = data_len
-            cpu.FEP0OUT = 1
-        elif endpoint == 1:
-            cpu.FUE1M0 = 0
-            cpu.UE1R_C = data_len
-        elif endpoint == 2:
-            cpu.FUE2M0 = 0
-            cpu.UE2R_C = data_len
-        elif endpoint == 3:
-            cpu.FUE3M0 = 0
-            cpu.UE3R_C = data_len
-        elif endpoint == 4:
-            cpu.FUE4M0 = 0
-            cpu.UE4R_C = data_len
-        self._interrupt()
-
-    def recv(self, endpoint):
-        cpu = self.cpu
-        if not cpu.FUDE:
-            raise RuntimeError('USB is disabled')
-        if not (
-            True,
-            cpu.FUE1EN,
-            cpu.FUE2EN,
-            cpu.FUE3EN,
-            cpu.FUE4EN,
-        )[endpoint]:
-            raise RuntimeError('Endpoint is disabled')
-        if [
+        if (
             cpu.FUE0M1,
             cpu.FUE1M1,
             cpu.FUE2M1,
             cpu.FUE3M1,
             cpu.FUE4M1,
-        ][endpoint]:
+        )[endpoint]:
             raise EndpointStall
         if not (
             cpu.FUE0M0,
@@ -393,20 +348,64 @@ class USB(object):
                     cpu.FEP4_NAK = 1
                 self._interrupt()
             raise EndpointNAK
-        start = (
+        start, stop = (
             0,
             8,
             cpu.EP2FIFO_ADDR,
             cpu.EP3FIFO_ADDR,
             cpu.EP4FIFO_ADDR,
-        )[endpoint]
-        length = (
-            cpu.UE0R & 0x0f,
-            cpu.UE1R_C,
-            cpu.UE2R_C,
-            cpu.UE3R_C,
-            cpu.UE4R_C,
-        )[endpoint]
+            0x136,
+        )[endpoint:endpoint + 2]
+        if stop == 0:
+            stop = 0x136
+        return start, stop
+
+    def send(self, endpoint, data):
+        """
+        Write <data> to CPU's USB subsystem in <endpoint> buffer.
+        """
+        cpu = self.cpu
+        start, stop = self._checkEndpoint(endpoint)
+        length = len(data)
+        if length > stop - start:
+            raise ValueError('Data too long for endpoint buffer')
+        for index, value in enumerate(data, start):
+            self.epbuf[index] = byte_ord(value)
+        if endpoint == 0:
+            cpu.FUE0M0 = 0
+            cpu.EP0OUT_CNT = length
+            cpu.FEP0OUT = 1
+        elif endpoint == 1:
+            cpu.FUE1M0 = 0
+            cpu.UE1R_C = length
+        elif endpoint == 2:
+            cpu.FUE2M0 = 0
+            cpu.UE2R_C = length
+        elif endpoint == 3:
+            cpu.FUE3M0 = 0
+            cpu.UE3R_C = length
+        elif endpoint == 4:
+            cpu.FUE4M0 = 0
+            cpu.UE4R_C = length
+        self._interrupt()
+
+    def recv(self, endpoint):
+        """
+        Read any pending data from CPU's USB subsystem in
+        <endpoint> buffer.
+        """
+        cpu = self.cpu
+        start, stop = self._checkEndpoint(endpoint)
+        length = min(
+            (
+                cpu.UE0R & 0x0f,
+                cpu.UE1R_C,
+                cpu.UE2R_C,
+                cpu.UE3R_C,
+                cpu.UE4R_C,
+            )[endpoint],
+            stop - start,
+        )
         result = b''.join(
             chr(x)
             for x in self.epbuf[start:start + length]
