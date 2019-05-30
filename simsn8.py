@@ -235,10 +235,14 @@ class USB(object):
             self.on_ep_enable_change(endpoint, bool(new_value & 0x80))
         if (
             self.on_ep_event_available is not None and
-            new_value & 0x60 and
+            (new_value & 0x60) and
             (new_value & 0x60) != (current_value & 0x60)
         ):
-            self.on_ep_event_available(endpoint)
+            self.on_ep_event_available(
+                endpoint,
+                stall=bool(new_value & 0x40),
+                ack=bool(new_value & 0x20),
+            )
 
     def writeEP0Enable(self, value):
         self._onWriteEPxEnable(0, self.ep0enable, value)
