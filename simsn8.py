@@ -230,8 +230,7 @@ class USB(object):
         if (
             self.on_ep_enable_change is not None and
             endpoint != 0 and
-            new_value & 0x80 and
-            not (current_value & 0x80)
+            (new_value & 0x80) != (current_value & 0x80)
         ):
             self.on_ep_enable_change(endpoint, bool(new_value & 0x80))
         if (
@@ -363,6 +362,7 @@ class USB(object):
     def send(self, endpoint, data):
         """
         Write <data> to CPU's USB subsystem in <endpoint> buffer.
+        Simulates an OUT USB transaction.
         """
         cpu = self.cpu
         start, stop = self._checkEndpoint(endpoint)
@@ -393,6 +393,7 @@ class USB(object):
         """
         Read any pending data from CPU's USB subsystem in
         <endpoint> buffer.
+        Simulates an IN USB transaction.
         """
         cpu = self.cpu
         start, stop = self._checkEndpoint(endpoint)
