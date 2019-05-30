@@ -240,6 +240,10 @@ class KU1255(object):
                                 self.i2c_state = I2C_IGNORE
                             else:
                                 self.i2c_buffer_index += 1
+                                if self.i2c_buffer_index > 3:
+                                    # CPU has received buttons, x and y.
+                                    # No need for further attention.
+                                    self.mouse_attn_float = True
                                 #print 'Sending %#04x' % self.i2c_current_byte
                                 self.sda_float = bool(self.i2c_current_byte & 0x80)
                                 #print 'Sending bit %i, sda_float=%i' % (self.i2c_bit_count, self.sda_float)
