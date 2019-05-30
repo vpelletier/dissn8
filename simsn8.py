@@ -798,7 +798,6 @@ class SN8(object):
         self.p5 = p5 = Port(self, 5, 0.015, 0.015, 40000, 5)
         self.slow_clock = 0 # ms
         self.oscillator_wakeup_time = 6 # ms
-        self.fail_on_missed_interrupt = True
         self.watchdog = watchdog = Watchdog(self)
         self.t0 = t0 = Timer(self, 0xff, 'FT0IRQ', 'FT0IEN')
         self.t1 = t1 = Timer(self, 0xffff, 'FT1IRQ', 'FT1IEN')
@@ -1257,8 +1256,6 @@ class SN8(object):
             self.FGIE = False
             # XXX: assuming interrupt has 2-cycle duration, like a normal call
             self._call(0x0008) # TODO: symbolic name from config file
-        elif self.fail_on_missed_interrupt:
-            raise RuntimeError('Missed interrupt')
 
     def reti(self):
         # XXX: assuming interrupts are re-enabled before jumping back (so tics
