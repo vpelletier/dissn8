@@ -303,7 +303,6 @@ class KU1255(object):
             raise ValueError('i2c_onByteReceived should not be called in state %r' % self.i2c_state)
 
     def getKeyLoad(self, column):
-        impedance_by_voltage = defaultdict(list)
         previous_column_count = 0
         previous_row_count = 0
         column_set = set([column])
@@ -318,31 +317,36 @@ class KU1255(object):
         ):
             previous_column_count = len(column_set)
             previous_row_count = len(row_set)
-            for column in column_set:
-                row_set.update(self.row_list_by_column[column])
-            for row in row_set:
-                column_set.update(self.column_list_by_row[row])
-        for row in row_set:
-            voltage, impedance = self.matrix[row]()
+            for connected_column in column_set:
+                row_set.update(self.row_list_by_column[connected_column])
+            for connected_row in row_set:
+                column_set.update(self.column_list_by_row[connected_row])
+        impedance_by_voltage = defaultdict(list)
+        for load_row in row_set:
+            voltage, impedance = self.matrix[load_row]()
+            if impedance != INF:
+                impedance_by_voltage[voltage].append(impedance)
+        getP1InternalLoad = self.cpu.p1.getInternalAsLoad
+        for load_column in column_set:
+            if load_column == column:
+                continue
+            voltage, impedance = getP1InternalLoad(load_column)
             if impedance != INF:
                 impedance_by_voltage[voltage].append(impedance)
         for key, value in impedance_by_voltage.items():
-            impedance_by_voltage[key] = sum(value) / len(value)
-        source_count = len(impedance_by_voltage)
-        if source_count == 0:
+            impedance_by_voltage[key] = 1 / sum(1 / x for x in value)
+        if impedance_by_voltage:
+            voltage, impedance = impedance_by_voltage.popitem()
+            while impedance_by_voltage:
+                other_voltage, other_impedance = impedance_by_voltage.popitem()
+                if voltage < other_voltage:
+                    voltage, other_voltage = other_voltage, voltage
+                    impedance, other_impedance = other_impedance, impedance
+                voltage = other_voltage + (voltage - other_voltage) * other_impedance / (impedance + other_impedance)
+                impedance = 1 / (1 / impedance + 1 / other_impedance)
+        else:
             voltage = 0
             impedance = INF
-        elif source_count == 1:
-            (voltage, impedance), = impedance_by_voltage.iteritems()
-        elif source_count == 2:
-            (v0, imp0), (v1, imp1) = impedance_by_voltage.iteritems()
-            if v0 > v1:
-                voltage = (v0 - v1) * imp1 / (imp0 + imp1)
-            else:
-                voltage = (v1 - v0) * imp0 / (imp0 + imp1)
-            impedance = (imp0 + imp1) / 2
-        else:
-            ValueError('I have not be taught multi-source voltage divider')
         return voltage, impedance
 
     def getI2CSCLLoad(self):
