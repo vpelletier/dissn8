@@ -1093,8 +1093,6 @@ class SN8(object):
 
     def read(self, address):
         assert address & 0x3ff == address, hex(address)
-        if address in self._read_watcher_dict:
-            self._read_watcher_dict[address](self, address)
         if address in self._volatile_dict:
             value = self._volatile_dict[address][0]()
         else:
@@ -1103,6 +1101,8 @@ class SN8(object):
                 raise ValueError('Nothing to read from at %#05x' % address)
         if value is None:
             raise ValueError('Reading from uninitialised memory')
+        if address in self._read_watcher_dict:
+            self._read_watcher_dict[address](self, address, value)
         return value
 
     def write(self, address, value):
