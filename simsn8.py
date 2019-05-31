@@ -654,18 +654,21 @@ class Port(object):
             else:
                 # Input.
                 if self.pull_up & mask:
-                    if load_impedance == INF:
-                        voltage = self.vdd
-                    else:
-                        # Voltage divisor:
-                        # Vdd-{pull_up_impedance}-pin-{load_impedance}-load_voltage
-                        voltage = self.vdd - ((self.vdd - load_voltage) / (load_impedance + self.pull_up_impedance)) * self.pull_up_impedance
+                    # Voltage divisor:
+                    # Vdd-{pull_up_impedance}-pin-{load_impedance}-load_voltage
+                    voltage = self.vdd - (
+                        (
+                            self.vdd - load_voltage
+                        ) / (load_impedance + self.pull_up_impedance)
+                    ) * self.pull_up_impedance
                 else:
                     voltage = load_voltage
                 if voltage > self.min_one:
                     result |= mask
                 elif voltage > self.max_zero:
-                    raise ValueError('Pin is metastable: %.3fV' % (voltage, ))
+                    raise ValueError(
+                        'Pin %i is metastable: %.3fV' % (pin, voltage),
+                    )
         return result
 
     def write(self, value):
