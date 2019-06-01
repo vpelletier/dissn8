@@ -291,8 +291,8 @@ class USB(object):
         cpu = self.cpu
         if not cpu.FUDE:
             raise RuntimeError('USB is disabled by firmware')
-        if cpu.FEP0SETUP:
-            raise RuntimeError('Firmware has not read previous SETUP yet')
+        if cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT:
+            raise RuntimeError('Firmware has unhandled EP0 events')
         self.epbuf[0] = request_type
         self.epbuf[1] = request
         self.epbuf[2] = value & 0xff
@@ -310,37 +310,42 @@ class USB(object):
         cpu = self.cpu
         if not cpu.FUDE:
             raise RuntimeError('USB is disabled')
-        if not (
-            True,
-            cpu.FUE1EN,
-            cpu.FUE2EN,
-            cpu.FUE3EN,
-            cpu.FUE4EN,
-        )[endpoint]:
+        if endpoint == 0:
+            enabled = True
+            stall               = cpu.FUE0M1
+            ack                 = cpu.FUE0M0
+            has_pending_events = cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT
+            nak_int_en = False
+        elif endpoint == 1:
+            enabled             = cpu.FUE1EN
+            stall               = cpu.FUE1M1
+            ack                 = cpu.FUE1M0
+            has_pending_events  = cpu.FEP1_ACK or cpu.FEP1_NAK
+            nak_int_en          = cpu.FEP1NAK_INT_EN
+        elif endpoint == 2:
+            enabled             = cpu.FUE2EN
+            stall               = cpu.FUE2M1
+            ack                 = cpu.FUE2M0
+            has_pending_events  = cpu.FEP2_ACK or cpu.FEP2_NAK
+            nak_int_en          = cpu.FEP2NAK_INT_EN
+        elif endpoint == 3:
+            enabled             = cpu.FUE3EN
+            stall               = cpu.FUE3M1
+            ack                 = cpu.FUE3M0
+            has_pending_events  = cpu.FEP3_ACK or cpu.FEP3_NAK
+            nak_int_en          = cpu.FEP3NAK_INT_EN
+        elif endpoint == 4:
+            enabled             = cpu.FUE4EN
+            stall               = cpu.FUE4M1
+            ack                 = cpu.FUE4M0
+            has_pending_events  = cpu.FEP4_ACK or cpu.FEP4_NAK
+            nak_int_en          = cpu.FEP4NAK_INT_EN
+        if not enabled:
             raise RuntimeError('Endpoint is disabled')
-        if (
-            cpu.FUE0M1,
-            cpu.FUE1M1,
-            cpu.FUE2M1,
-            cpu.FUE3M1,
-            cpu.FUE4M1,
-        )[endpoint]:
+        if stall:
             raise EndpointStall
-        if not (
-            cpu.FUE0M0,
-            cpu.FUE1M0,
-            cpu.FUE2M0,
-            cpu.FUE3M0,
-            cpu.FUE4M0,
-        )[endpoint]:
-            # XXX: only for INT transfers ?
-            if (
-                False,
-                cpu.FEP1NAK_INT_EN,
-                cpu.FEP2NAK_INT_EN,
-                cpu.FEP3NAK_INT_EN,
-                cpu.FEP4NAK_INT_EN,
-            )[endpoint]:
+        if not ack:
+            if nak_int_en:
                 if endpoint == 1:
                     cpu.FEP1_NAK = 1
                 elif endpoint == 2:
@@ -351,6 +356,8 @@ class USB(object):
                     cpu.FEP4_NAK = 1
                 self._interrupt()
             raise EndpointNAK
+        if has_pending_events:
+            raise RuntimeError('Endpoint accepts transfer but firmware did not clear pending events')
         start, stop = (
             0,
             8,
