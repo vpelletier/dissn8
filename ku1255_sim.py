@@ -76,7 +76,6 @@ class KU1255(object):
         usb.on_wake_signaling = self.onUSBWakeupRequest
         usb.on_enable_change = self.onUSBEnableChange
         usb.on_ep_enable_change = self.onUSBEPEnableChange
-        usb.on_setup_read = self.onUSBSETUPRead
         # Bit-banging I2C device emulation (mouse)
         cpu.p2.setLoad(4, self.getI2CSCLLoad)
         cpu.p2.setLoad(5, self.getI2CSDALoad)
@@ -149,7 +148,6 @@ class KU1255(object):
             for x in xrange(len(self.matrix))
         ]
         # USB
-        self.usb_is_setup_read = False
         self.usb_is_enabled = False
         self.usb_is_endpoint_enabled = [True, False, False, False, False]
         self.usb_is_wakeup_requested = False
@@ -397,34 +395,28 @@ class KU1255(object):
         self.i2c_buffer[3] = y & 0xff
         self.mouse_attn_float = False
 
+    def _waitForEP0EventsHandled(self, deadline):
+        cpu = self.cpu
+        step = self.step
+        while (cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT) and cpu.run_time < deadline:
+            step()
+
     def controlRead(self, request_type, request, value, index, length, timeout):
         cpu = self.cpu
-        usb = cpu.usb
         deadline = cpu.run_time + timeout
-        step = self.step
-        self.usb_is_setup_read = False
-        waitRETI(self)
-        usb.sendSETUP(request_type, request, value, index, length)
-        while not self.usb_is_setup_read and cpu.run_time < deadline:
-            step()
-        if not self.usb_is_setup_read:
-            raise Timeout('SETUP not read by cpu')
+        self._waitForEP0EventsHandled(deadline)
+        cpu.usb.sendSETUP(request_type, request, value, index, length)
+        self._waitForEP0EventsHandled(deadline)
         # Hardcoded max packet size, as it is fixed by spu for endpoint 0
         return self._readEP(0, length, 8, deadline)
 
     def controlWrite(self, request_type, request, value, index, data, timeout):
         cpu = self.cpu
-        usb = cpu.usb
         deadline = cpu.run_time + timeout
-        step = self.step
-        self.usb_is_setup_read = False
-        waitRETI(self)
-        usb.sendSETUP(request_type, request, value, index, len(data))
-        while not self.usb_is_setup_read and cpu.run_time < deadline:
-            step()
-        if not self.usb_is_setup_read:
-            raise Timeout('SETUP not read by cpu')
-        # Hardcoded max packet size, as it is fixed by spu for endpoint 0
+        self._waitForEP0EventsHandled(deadline)
+        cpu.usb.sendSETUP(request_type, request, value, index, len(data))
+        # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
+        self._waitForEP0EventsHandled(deadline)
         self._writeEP(0, data, 8, deadline)
 
     def readEP(self, endpoint, length, max_packet_size, timeout=5):
@@ -450,20 +442,19 @@ class KU1255(object):
             'FUE3M0',
             'FUE4M0',
         )[endpoint]
-        while cpu.run_time < deadline:
-            if getattr(cpu, stall_attr_name):
-                raise EndpointStall
-            if getattr(cpu, ack_attr_name):
-                return
+        while (
+            not getattr(cpu, stall_attr_name) and
+            not getattr(cpu, ack_attr_name) and
+            cpu.run_time < deadline
+        ):
             step()
-        raise Timeout('Endpoint still NAKs')
 
     def _readEP(self, endpoint, length, max_packet_size, deadline):
         recv = self.cpu.usb.recv
         result = b''
         while True:
+            # Wait for data to be available in endpoint buffer.
             self._waitForAckOrStall(endpoint, deadline)
-            waitRETI(self)
             chunk = recv(endpoint)
             result += chunk
             if len(result) == length or len(chunk) < max_packet_size:
@@ -473,9 +464,9 @@ class KU1255(object):
     def _writeEP(self, endpoint, data, max_packet_size, deadline):
         send = self.cpu.usb.send
         while data:
-            waitRETI(self)
-            send(endpoint, data[:max_packet_size])
+            # Wait for room to be available in endpoint buffer.
             self._waitForAckOrStall(endpoint, deadline)
+            send(endpoint, data[:max_packet_size])
             data = data[max_packet_size:]
 
     def clearFeature(self, recipient, feature, index=0, timeout=5):
@@ -637,9 +628,6 @@ class KU1255(object):
     def onUSBEPEnableChange(self, endpoint, is_enabled):
         self.usb_is_endpoint_enabled[endpoint] = is_enabled
 
-    def onUSBSETUPRead(self):
-        self.usb_is_setup_read = True
-
     def getSavedFnLock(self):
         return bool(self.cpu.flash[0x2800] & 0x0002)
 
@@ -659,21 +647,6 @@ class KU1255(object):
             (speed & 0xf) << 8
         )
 
-def waitRETI(device):
-    # XXX: this is a hack: either CPU should queue interrupts while they are
-    # disabled and trigger then on interrupt re-enable (from spec it does not
-    # seem to be the case), or firmware should re-check interrupt sources
-    # before exiting interrupt handler (but potentially risking watchdog
-    # overflow if, as per specs, it is only cleared in main loop and not in
-    # interrupt handler).
-    # Using this function makes assumption that firmware uses interrupts for
-    # specific actions, which may not be always the case.
-    deadline = device.cpu.run_time + 5
-    while not device.cpu.FGIE and device.cpu.run_time < deadline:
-        device.step()
-    if not device.cpu.FGIE:
-        raise RuntimeError('Still in interrupt handler ?')
-
 def main():
     parser = argparse.ArgumentParser(
         description='KU1255 simulator',
@@ -683,16 +656,11 @@ def main():
     args = parser.parse_args()
     with open(args.firmware) as firmware:
         device = KU1255(firmware)
-    def watchRead(cpu, address):
-        print '%#05x read    %r' % (address, cpu)
-    def watchWrite(cpu, address, value):
-        print '%#05x = %#04x %r' % (address, value, cpu)
-    #device.cpu.onRead(, watchRead)
-    #device.cpu.onWrite(, watchWrite)
-    #while device.cpu.run_time < 150.1:
-    #while device.cpu.cycle_count < 542340:
-    #while device.cpu.pc != 0x09c3:
-    #    device.step()
+
+    def sleep(duration):
+        deadline = device.cpu.run_time + duration
+        while device.cpu.run_time < deadline:
+            device.step()
 
     # Must have enabled usb subsystem by 200ms (arbitrary)
     while not device.usb_is_enabled and device.cpu.run_time < 200:
@@ -707,10 +675,14 @@ def main():
     device.cpu.usb.reset = False
     # Based on linux enumeration sequence
     device_descriptor = device.getDescriptor(1, 8)
+    sleep(1)
     print 'pre-address device desc:', hexdump(device_descriptor)
     device.setAddress(1)
+    sleep(1)
+    print 'address set'
     total_length = byte_ord(device_descriptor[0])
     device_descriptor = device.getDescriptor(1, total_length)
+    sleep(1)
     print 'full device desc:', hexdump(device_descriptor)
     for _ in xrange(3):
         try:
@@ -720,20 +692,31 @@ def main():
         else:
             print 'device qualifier:', hexdump(device_qualifier)
             break
+        finally:
+            sleep(1)
     config_descriptor_head = device.getDescriptor(2, 9)
+    sleep(1)
     print 'config desc head:', hexdump(config_descriptor_head)
     total_length, = unpack('<H', config_descriptor_head[2:4])
     print 'len', total_length
     config_descriptor = device.getDescriptor(2, total_length)
+    sleep(1)
     print 'config desc:', hexdump(config_descriptor)
     first_supported_language, = unpack('<H', device.getDescriptor(3, 255)[2:4])
+    sleep(1)
     print 'string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language)[2:].decode('utf-16')
+    sleep(1)
     print 'string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16')
+    sleep(1)
     device.setConfiguration(1)
+    sleep(1)
     device.setHIDIdle(0, 0, 0)
+    sleep(1)
     hid_descriptor_ep1 = device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
+    sleep(1)
     print 'HID descr interface 0:', hexdump(hid_descriptor_ep1)
     device.setHIDReport(2, 0, 0, b'\x00')
+    sleep(1)
     report_0_length = (
         1 * 8 + # modifier keys
         1 * 8 + # padding
@@ -746,10 +729,13 @@ def main():
     report_0_length = int(report_0_length)
     try:
         device.readEP(1, report_0_length, 63)
-    except Timeout:
+    except EndpointNAK:
         pass
+    sleep(1)
     device.setHIDIdle(0, 1, 0)
+    sleep(1)
     hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1) # XXX: should parse config_descriptor
+    sleep(1)
     print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
     report_1_length = (
         1 * 5 + # buttons
@@ -762,20 +748,31 @@ def main():
     report_1_length = int(report_1_length)
     try:
         device.readEP(2, report_1_length, 63)
-    except Timeout:
+    except EndpointNAK:
         pass
+    sleep(1)
     device.setHIDReport(3, 0x13, 1, b'\x13\x01\x03')
+    sleep(1)
     device.setHIDReport(3, 0x13, 1, b'\x13\x05\x01')
+    sleep(1)
     device.setHIDReport(3, 0x13, 1, b'\x13\x02\x05')
+    sleep(1)
 
     # Exercising other standard requests
     print 'active configuration:', device.getConfiguration()
+    sleep(1)
     print 'interface 0 active alt setting:', device.getInterface(0)
+    sleep(1)
     print 'interface 1 active alt setting:', device.getInterface(1)
+    sleep(1)
     print 'HID protocol interface 0:', device.getHIDProtocol(0)
+    sleep(1)
     print 'HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)'
+    sleep(1)
     print 'HID protocol interface 1:', device.getHIDProtocol(1)
+    sleep(1)
     print 'HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)'
+    sleep(1)
 
     print 'saved fnLock state:', device.getSavedFnLock()
     print 'saved mouse speed:', device.getSavedMouseSpeed()
@@ -786,7 +783,153 @@ def main():
         raise Timeout('Mouse not initialised')
     device.setMouseState(1, -1, True, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    sleep(1)
     print 'report    interface 1:', hexdump(report_ep2)
+    try:
+        device.readEP(2, report_1_length, 63)
+    except EndpointNAK:
+        pass
+    else:
+        raise AssertionError('EP2 is not NAKing ?')
+    sleep(1)
+    device.setMouseState(0, 0, False, False, False)
+    report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    sleep(1)
+    print 'report    interface 1:', hexdump(report_ep2)
+    try:
+        device.readEP(2, report_1_length, 63)
+    except EndpointNAK:
+        pass
+    else:
+        raise AssertionError('EP2 is not NAKing ?')
+    sleep(1)
+
+    EMPTY_KEY_REPORT = b'\x00' * 8
+    MODIFIER_KEY_DICT = {
+        b'\x01'[0]: 'LCTRL',
+        b'\x02'[0]: 'LSHIFT',
+        b'\x04'[0]: 'LALT',
+        b'\x08'[0]: 'LGUI',
+        b'\x10'[0]: 'RCTRL',
+        b'\x20'[0]: 'RSHIFT',
+        b'\x40'[0]: 'RALT',
+        b'\x80'[0]: 'RGUI',
+    }
+    KEY_DICT = {
+        b'\x01'[0]: '(rollover)',
+        b'\x04'[0]: 'A',
+        b'\x05'[0]: 'B',
+        b'\x06'[0]: 'C',
+        b'\x07'[0]: 'D',
+        b'\x08'[0]: 'E',
+        b'\x09'[0]: 'F',
+        b'\x0a'[0]: 'G',
+        b'\x0b'[0]: 'H',
+        b'\x0c'[0]: 'I',
+        b'\x0d'[0]: 'J',
+        b'\x0e'[0]: 'K',
+        b'\x0f'[0]: 'L',
+        b'\x10'[0]: 'M',
+        b'\x11'[0]: 'N',
+        b'\x12'[0]: 'O',
+        b'\x13'[0]: 'P',
+        b'\x14'[0]: 'Q',
+        b'\x15'[0]: 'R',
+        b'\x16'[0]: 'S',
+        b'\x17'[0]: 'T',
+        b'\x18'[0]: 'U',
+        b'\x19'[0]: 'V',
+        b'\x1a'[0]: 'W',
+        b'\x1b'[0]: 'X',
+        b'\x1c'[0]: 'Y',
+        b'\x1d'[0]: 'Z',
+        b'\x1e'[0]: '1',
+        b'\x1f'[0]: '2',
+        b'\x20'[0]: '3',
+        b'\x21'[0]: '4',
+        b'\x22'[0]: '5',
+        b'\x23'[0]: '6',
+        b'\x24'[0]: '7',
+        b'\x25'[0]: '8',
+        b'\x26'[0]: '9',
+        b'\x27'[0]: '0',
+        b'\x28'[0]: 'RETURN',
+        b'\x29'[0]: 'ESCAPE',
+        b'\x2a'[0]: 'BACKSPACE',
+        b'\x2b'[0]: 'TAB',
+        b'\x2c'[0]: 'SPACE',
+        b'\x2d'[0]: 'MINUS',
+        b'\x2e'[0]: 'EQUALS',
+        b'\x2f'[0]: 'LEFTBRACKET',
+        b'\x30'[0]: 'RIGHTBRACKET',
+        b'\x31'[0]: 'BACKSLASH',
+        b'\x32'[0]: 'NONUSHASH',
+        b'\x33'[0]: 'SEMICOLON',
+        b'\x34'[0]: 'APOSTROPHE',
+        b'\x35'[0]: 'GRAVE',
+        b'\x36'[0]: 'COMMA',
+        b'\x37'[0]: 'PERIOD',
+        b'\x38'[0]: 'SLASH',
+        b'\x39'[0]: 'CAPSLOCK',
+        b'\x3a'[0]: 'F1',
+        b'\x3b'[0]: 'F2',
+        b'\x3c'[0]: 'F3',
+        b'\x3d'[0]: 'F4',
+        b'\x3e'[0]: 'F5',
+        b'\x3f'[0]: 'F6',
+        b'\x40'[0]: 'F7',
+        b'\x41'[0]: 'F8',
+        b'\x42'[0]: 'F9',
+        b'\x43'[0]: 'F10',
+        b'\x44'[0]: 'F11',
+        b'\x45'[0]: 'F12',
+        b'\x46'[0]: 'PRINTSCREEN',
+        b'\x48'[0]: 'PAUSE',
+        b'\x49'[0]: 'INSERT',
+        b'\x4a'[0]: 'HOME',
+        b'\x4b'[0]: 'PAGEUP',
+        b'\x4c'[0]: 'DELETE',
+        b'\x4d'[0]: 'END',
+        b'\x4e'[0]: 'PAGEDOWN',
+        b'\x4f'[0]: 'RIGHT',
+        b'\x50'[0]: 'LEFT',
+        b'\x51'[0]: 'DOWN',
+        b'\x52'[0]: 'UP',
+        b'\x64'[0]: 'NONUSBACKSLASH',
+        b'\x87'[0]: 'INTERNATIONAL1',
+        b'\x88'[0]: 'INTERNATIONAL2',
+        b'\x89'[0]: 'INTERNATIONAL3',
+        b'\x8a'[0]: 'INTERNATIONAL4',
+        b'\x8b'[0]: 'INTERNATIONAL5',
+        b'\xd0'[0]: 'KP_MEMSTORE',
+        b'\xd2'[0]: 'KP_MEMCLEAR',
+        b'\xd4'[0]: 'KP_MEMSUBTRACT',
+    }
+
+    for y in xrange(16):
+        for x in xrange(8):
+            device.pressKey(y, x)
+            report = device.readEP(1, report_0_length, 63, timeout=500)
+            sleep(1)
+            assert report[1] == b'\x00'[0], hexdump(report)
+            assert report[3:] == b'\x00' * 5, hexdump(report)
+            if byte_ord(report[0]):
+                assert not byte_ord(report[2])
+                print '%14s' % MODIFIER_KEY_DICT[report[0]],
+            else:
+                print '%14s' % KEY_DICT.get(report[2], '(none)'),
+            device.releaseKey(y, x)
+            report = device.readEP(1, report_0_length, 63, timeout=500)
+            sleep(1)
+            assert report == EMPTY_KEY_REPORT, hexdump(report)
+        print
+    device.pressKey(13, 1) # LCTRL
+    device.readEP(1, report_0_length, 63, timeout=500)
+    sleep(1)
+    device.pressKey(4, 5) # C
+    report = device.readEP(1, report_0_length, 63, timeout=500)
+    sleep(1)
+    print hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)')
     return
     device.trace = True
     while True:
