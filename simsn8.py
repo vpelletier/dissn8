@@ -912,6 +912,7 @@ class SN8(object):
         assert not volatile_and_masked_set, volatile_and_masked_set
         self._read_watcher_dict = {}
         self._write_watcher_dict = {}
+        self.breakpoint_set = set()
         self._bit_instruction_dict = {
             0x4000: self.clearBit,
             0x4800: self.setBit,
@@ -1026,7 +1027,11 @@ class SN8(object):
         self.PCH = (value >> 8) & 0xff
 
     def step(self):
-        instruction = self.flash[self.pc]
+        pc = self.pc
+        if pc in self.breakpoint_set:
+            print 'bp %#06x %r' % (pc, self)
+            import pdb; pdb.set_trace()
+        instruction = self.flash[pc]
         if instruction in self._no_operand_instruction_dict:
             self._no_operand_instruction_dict[instruction]()
         elif instruction >= 0x8000: # 0x8000..0xffff: JMP & CALL
