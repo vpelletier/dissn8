@@ -138,7 +138,7 @@ class USB(object):
         self.cpu = cpu
         self.irq_name = irq_name
         self.ien_name = ien_name
-        self.last_sof_time = 0
+        self.next_sof_time = 0
         self.on_wake_signaling = None
         self.on_enable_change = None
         self.on_ep_enable_change = None
@@ -275,10 +275,10 @@ class USB(object):
             self.on_wake_signaling()
         if (
             cpu.FSOF_INT_EN and
-            cpu_time - self.last_sof_time >= 1 # Full-speed SOFs are every 1ms
+            cpu_time > self.next_sof_time # Full-speed SOFs are every 1ms
         ):
-            self.sof = 1
-            self.last_sof_time += 1
+            cpu.FSOF = 1
+            self.next_sof_time = cpu_time + 1
             self._interrupt()
 
     def _interrupt(self):
