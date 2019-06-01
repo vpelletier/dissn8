@@ -1441,12 +1441,12 @@ class SN8(object):
         self.FZ = byte_value == 0
         return byte_value
 
-    def subAM(self, address, carry=0):
+    def subAM(self, address, carry=1):
         self.A = self._subAI(self.read(address) + carry - 1)
         self.pc += 1
         self.tic()
 
-    def subMA(self, address, carry=0):
+    def subMA(self, address, carry=1):
         self.write(address, self._subAI(self.read(address) + carry - 1))
         self.pc += 1
         self.tic()
