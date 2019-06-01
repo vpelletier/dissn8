@@ -1373,7 +1373,7 @@ class SN8(object):
 
     def cmprsAI(self, immediate):
         a = self.A
-        self.FC = a <= immediate
+        self.FC = a >= immediate
         self.FZ = condition = a == immediate
         if condition:
             self.pc += 2
