@@ -1291,6 +1291,8 @@ class SN8(object):
         # can interrupt again).
         self.FGIE = True
         self.ret()
+        if self.INTRQ or self.INTRQ1:
+            self.interrupt()
 
     def push(self):
         self.push_buf = self.A, self.PFLAG
