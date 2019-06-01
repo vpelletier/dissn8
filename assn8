@@ -350,8 +350,13 @@ class Assembler(object):
         '''
         include : INCLUDE STRING EOL
         '''
+        include_filename = production[2]
+        for include_path in [os.path.dirname(self.filename)] + self.include:
+            path = os.path.join(include_path, include_filename)
+            if os.path.exists(path):
+                break
         try:
-            with open(production[2]) as infile:
+            with open(path) as infile:
                 self._parse(infile)
         except Exception:
             print('Error while processing %r, included from %s:%i:' % (
@@ -617,8 +622,9 @@ class Assembler(object):
             production.value,
         ))
 
-    def __init__(self, source_file, debug):
+    def __init__(self, source_file, debug, include):
         self.debug = debug
+        self.include = include
         self._parser_stack = []
         self.chip_identifier_dict = {
             'A': 'A', # Magic identifier for instruction matching
@@ -827,6 +833,13 @@ def main():
         help='Path to write binary image to, or - for stdout (default).',
     )
     parser.add_argument(
+        '-I',
+        '--include',
+        nargs='+',
+        action='append',
+        help='Inclusion path(s)',
+    )
+    parser.add_argument(
         'input',
         type=argparse.FileType('r'),
         default=sys.stdin,
@@ -839,7 +852,7 @@ def main():
     )
     args = parser.parse_args()
     with args.input as infile:
-        assembler = Assembler(infile, debug=args.debug)
+        assembler = Assembler(infile, debug=args.debug, include=sum(args.include, []))
     with args.output as outfile:
         write = outfile.write
         for address in range(0x3000):
