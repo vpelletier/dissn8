@@ -56,6 +56,7 @@ class ByteProperty(object):
         return instance.read(self.address)
 
     def __set__(self, instance, value):
+        assert value == (value & 0xff), repr(value)
         instance.write(self.address, value)
 
 class BitProperty(object):
@@ -1106,7 +1107,7 @@ class SN8(object):
         self.write(address, value)
 
     def read(self, address):
-        assert address & 0x3ff == address, hex(address)
+        assert (address & 0x3ff) == address, hex(address)
         if address in self._volatile_dict:
             value = self._volatile_dict[address][0]()
         else:
@@ -1117,10 +1118,12 @@ class SN8(object):
             raise ValueError('Reading from uninitialised memory')
         if address in self._read_watcher_dict:
             self._read_watcher_dict[address](self, address, value)
+        assert value == (value & 0xff), repr(value)
         return value
 
     def write(self, address, value):
-        assert address & 0x3ff == address, hex(address)
+        assert value == (value & 0xff), repr(value)
+        assert (address & 0x3ff) == address, hex(address)
         if address in self._write_watcher_dict:
             self._write_watcher_dict[address](self, address, value)
         if address in self._volatile_dict:
@@ -1199,7 +1202,7 @@ class SN8(object):
         else:
             device_list = (self.t0, self.t1, self.tc0, self.tc1, self.tc2)
             self.cycle_count += 1
-            if not oscm & 0x04:
+            if not (oscm & 0x04):
                 device_list += (self.usb, )
         if oscm & 0x04:
             self.run_time += self.low_speed_cycle_duration_ms
@@ -1336,7 +1339,7 @@ class SN8(object):
 
     @staticmethod
     def _swap(value):
-        return (value << 4 & 0xf0) | value >> 4
+        return ((value << 4) & 0xf0) | ((value >> 4) & 0x0f)
 
     def swapMM(self, address):
         address = self.bankify(address)
