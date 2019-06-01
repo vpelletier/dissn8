@@ -283,6 +283,8 @@ class USB(object):
 
     def _interrupt(self):
         cpu = self.cpu
+        if getattr(cpu, self.irq_name):
+            raise RuntimeError('USB interrupt already pending')
         setattr(cpu, self.irq_name, 1)
         if getattr(cpu, self.ien_name):
             cpu.interrupt()
