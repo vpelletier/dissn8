@@ -1282,7 +1282,6 @@ class SN8(object):
     def reset(self, source):
         self.ram[0x80:0x100] = REGISTERS_RESET_VALUE_LIST
         self.PFLAG = (self.PFLAG & 0x3f) | source
-        self.watchdog_counter = 0
         code_options = self.flash[0x2fff]
         self.watchdog_enabled = code_options & 0x0f00 != 0b1010
         self.watchdog_always_on = code_options & 0x0f00 == 0
