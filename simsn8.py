@@ -935,10 +935,10 @@ class SN8(object):
             0x0600:           self.cmprsAI,                             # CMPRS A, #
             0x0700: lambda x: self.cmprsAI(self.read(self.bankify(x))), # CMPRS A, M
 
-            0x0800: lambda x: self.rotateA(x, self._rrc), # RRC M
-            0x0900: lambda x: self.rotateM(x, self._rrc), # RRCM M
-            0x0a00: lambda x: self.rotateA(x, self._rlc), # RLC M
-            0x0b00: lambda x: self.rotateM(x, self._rlc), # RLCM M
+            0x0800: lambda x: self.rotateA(self.bankify(x), self._rrc), # RRC M
+            0x0900: lambda x: self.rotateM(self.bankify(x), self._rrc), # RRCM M
+            0x0a00: lambda x: self.rotateA(self.bankify(x), self._rlc), # RLC M
+            0x0b00: lambda x: self.rotateM(self.bankify(x), self._rlc), # RLCM M
 
             0x1000: lambda x: self.addAM(self.bankify(x), self.FC), # ADC A, M
             0x1100: lambda x: self.addMA(self.bankify(x), self.FC), # ADC M, A
@@ -953,23 +953,23 @@ class SN8(object):
             0x2300: lambda x: self.subMA(self.bankify(x)),          # SUB M, A
             0x2400:           self.subAI,                           # SUB A, #
 
-            0x1500: lambda x: self._incAM(x,  1), # INCS M
-            0x1600: lambda x: self._incMM(x,  1), # INCMS M
-            0x2500: lambda x: self._incAM(x, -1), # DECS M
-            0x2600: lambda x: self._incMM(x, -1), # DECMS M
+            0x1500: lambda x: self.incAM(self.bankify(x),  1), # INCS M
+            0x1600: lambda x: self.incMM(self.bankify(x),  1), # INCMS M
+            0x2500: lambda x: self.incAM(self.bankify(x), -1), # DECS M
+            0x2600: lambda x: self.incMM(self.bankify(x), -1), # DECMS M
 
-            0x1700: self.swapAM, # SWAP M
-            0x2700: self.swapMM, # SWAPM M
+            0x1700: lambda x: self.swapAM(self.bankify(x)), # SWAP M
+            0x2700: lambda x: self.swapMM(self.bankify(x)), # SWAPM M
 
-            0x1800: lambda x: self._logicAI(self.read(self.bankify(x)), logic_or),  # OR  A, M
-            0x1900: lambda x: self._logicMA(x,                          logic_or),  # OR  M, A
-            0x1a00: lambda x: self._logicAI(x,                          logic_or),  # OR  A, #
-            0x1b00: lambda x: self._logicAI(self.read(self.bankify(x)), logic_xor), # XOR A, M
-            0x1c00: lambda x: self._logicMA(x,                          logic_xor), # XOR M, A
-            0x1d00: lambda x: self._logicAI(x,                          logic_xor), # XOR A, #
-            0x2800: lambda x: self._logicAI(self.read(self.bankify(x)), logic_and), # AND A, M
-            0x2900: lambda x: self._logicMA(x,                          logic_and), # AND M, A
-            0x2a00: lambda x: self._logicAI(x,                          logic_and), # AND A, #
+            0x1800: lambda x: self.logicAM(self.bankify(x), logic_or),  # OR  A, M
+            0x1900: lambda x: self.logicMA(self.bankify(x), logic_or),  # OR  M, A
+            0x1a00: lambda x: self.logicAI(x,               logic_or),  # OR  A, #
+            0x1b00: lambda x: self.logicAM(self.bankify(x), logic_xor), # XOR A, M
+            0x1c00: lambda x: self.logicMA(self.bankify(x), logic_xor), # XOR M, A
+            0x1d00: lambda x: self.logicAI(x,               logic_xor), # XOR A, #
+            0x2800: lambda x: self.logicAM(self.bankify(x), logic_and), # AND A, M
+            0x2900: lambda x: self.logicMA(self.bankify(x), logic_and), # AND M, A
+            0x2a00: lambda x: self.logicAI(x,               logic_and), # AND A, #
 
             0x1e00: lambda x: self.movAM(self.bankify(x)),          # MOV A, M
             0x2e00:           self.movAM,                           # B0MOV A, M
@@ -1261,7 +1261,6 @@ class SN8(object):
         self.jump(addr)
 
     def call(self, addr):
-        # Prepare return address.
         self.pc += 1
         self._call(addr)
 
@@ -1291,52 +1290,55 @@ class SN8(object):
         # can interrupt again).
         self.FGIE = True
         self.ret()
-        if self.INTRQ or self.INTRQ1:
+        if (self.INTRQ & self.INTEN) or (self.INTRQ1 & self.INTEN1):
+            #print 're-triggering interrupt: %#04x %#04x' % (self.INTRQ, self.INTRQ1)
             self.interrupt()
 
     def push(self):
-        self.push_buf = self.A, self.PFLAG
         self.pc += 1
+        # XXX: are NT0, NPD masked on push or on pop ?
+        self.push_buf = self.A, (self.PFLAG & 0x3f)
         self.tic()
 
     def pop(self):
-        self.A, self.PFLAG = self.push_buf
         self.pc += 1
+        self.A = self.push_buf[0]
+        self.PFLAG = (self.PFLAG & 0xc0) | self.push_buf[1]
         self.tic()
 
     def movc(self):
+        self.pc += 1
         value = self.flash[(self.Y << 8) | self.Z]
         self.A = value & 0xff
         self.R = value >> 8
-        self.pc += 1
         self.tic()
         self.tic()
 
     def xch(self, address):
+        self.pc += 1
         from_ram = self.read(address)
         self.write(address, self.A)
         self.A = from_ram
         # FZ unchanged
-        self.pc += 1
-        self.tic()
         if not 0x80 <= address < 0x100:
             self.tic()
+        self.tic()
 
     def movAM(self, address):
+        self.pc += 1
         self.A = value = self.read(address)
         self.FZ = value == 0
-        self.pc += 1
         self.tic()
 
     def movAI(self, immediate):
+        self.pc += 1
         self.A = immediate
         # FZ unchanged
-        self.pc += 1
         self.tic()
 
     def movMI(self, address, value):
-        self.write(address, value)
         self.pc += 1
+        self.write(address, value)
         self.tic()
 
     @staticmethod
@@ -1344,44 +1346,49 @@ class SN8(object):
         return ((value << 4) & 0xf0) | ((value >> 4) & 0x0f)
 
     def swapMM(self, address):
-        address = self.bankify(address)
-        self.write(address, self._swap(self.read(address)))
         self.pc += 1
-        self.tic()
+        self.write(address, self._swap(self.read(address)))
         if not 0x80 <= address < 0x100:
             self.tic()
+        self.tic()
 
     def swapAM(self, address):
-        self.A = self._swap(self.read(self.bankify(address)))
-        # FZ unchanged
         self.pc += 1
+        self.A = self._swap(self.read(address))
+        # FZ unchanged
         self.tic()
 
-    def _logicAI(self, immediate, logic):
+    def logicAI(self, immediate, logic):
+        self.pc += 1
         self.A = value = logic(self.A, immediate)
         self.FZ = value == 0
-        self.pc += 1
         self.tic()
 
-    def _logicMA(self, address, logic):
-        address = self.bankify(address)
+    def logicAM(self, address, logic):
+        self.pc += 1
+        self.A = value = logic(self.A, self.read(address))
+        self.FZ = value == 0
+        if not 0x80 <= address < 0x100:
+            self.tic()
+        self.tic()
+
+    def logicMA(self, address, logic):
+        self.pc += 1
         value = logic(self.A, self.read(address))
         self.write(address, value)
         self.FZ = value == 0
-        self.pc += 1
-        self.tic()
         if not 0x80 <= address < 0x100:
             self.tic()
+        self.tic()
 
     def cmprsAI(self, immediate):
+        self.pc += 1
         a = self.A
         self.FC = a >= immediate
         self.FZ = condition = a == immediate
         if condition:
-            self.pc += 2
-            self.tic()
-        else:
             self.pc += 1
+            self.tic()
         self.tic()
 
     def _rrc(self, address):
@@ -1395,18 +1402,24 @@ class SN8(object):
         return value & 0xff
 
     def rotateA(self, address, rotor):
-        address = self.bankify(address)
-        self.A = rotor(address)
+        # Tested on vendor's simulator: "RLC PCL" stores in A the address of
+        # next instruction, shifted left once.
+        # Similarly, "RRC PCL" stored in A the address of next instruction,
+        # shifted right once.
         self.pc += 1
+        self.A = rotor(address)
         self.tic()
 
     def rotateM(self, address, rotor):
-        address = self.bankify(address)
-        self.write(address, rotor(address))
+        # Tested on vendor's simulator: "ORG 0x7e RLCM PCL" jumps to 0xff, so
+        # it sees PCL as 0x7f.
+        # Similarly, "ORG 0xfd RRCM PCL" jumps to 0x7f, so it sees PCL as 0xfe
+        # (or 0xff, but that would not make sense).
         self.pc += 1
-        self.tic()
+        self.write(address, rotor(address))
         if not 0x80 <= address < 0x100:
             self.tic()
+        self.tic()
 
     def _addAI(self, immediate):
         a = self.A
@@ -1418,23 +1431,37 @@ class SN8(object):
         return byte_value
 
     def addAM(self, address, carry=0):
-        self.A = self._addAI(self.read(address) + carry)
+        # Tested on vendor's simulator: "MOV A, #0x00\nADD A, PCL" stores
+        # in A the address of next instruction.
         self.pc += 1
+        self.A = self._addAI(self.read(address) + carry)
         self.tic()
 
     def addMA(self, address, carry=0):
-        self.write(address, self._addAI(self.read(address) + carry))
+        # Tested on vendor's simulator: "MOV A, #0xfe\nADD PCL, A" jumps to
+        # previous instruction. 0xfe is -2 (modulo 0x100), so ADD instruction
+        # saw PCL pointing at the next instruction.
+        # Note, this simulator behavior directly contradicts the spec:
+        # according to 2.1.1.4, if PCL overflows because of "ADD PCL, A", then
+        # PCH is incremented by 1.
+        # Then again, the spec contradicts itself several times by both saying
+        # the above and on the very next page (same section) saying that jump
+        # tables must not sit on both sides of a 0x100 boundary.
+        # So just raise if this situation happens.
         self.pc += 1
-        self.tic()
+        self.write(address, self._addAI(self.read(address) + carry))
+        if address == self.addressOf('PCL') and self.FC:
+            raise RuntimeError('Incrementing PCL overflows')
         if not 0x80 <= address < 0x100:
             self.tic()
-
-    def addAI(self, immediate):
-        self.A = self._addAI(immediate)
-        self.pc += 1
         self.tic()
 
-    def _subAI(self, immediate):
+    def addAI(self, immediate):
+        self.pc += 1
+        self.A = self._addAI(immediate)
+        self.tic()
+
+    def _subIA(self, immediate):
         a = self.A
         value = a - immediate
         byte_value = value & 0xff
@@ -1444,73 +1471,91 @@ class SN8(object):
         return byte_value
 
     def subAM(self, address, carry=1):
-        self.A = self._subAI(self.read(address) + carry - 1)
         self.pc += 1
+        self.A = self._subIA(self.read(address) + carry - 1)
         self.tic()
 
     def subMA(self, address, carry=1):
-        self.write(address, self._subAI(self.read(address) + carry - 1))
         self.pc += 1
+        self.write(address, self._subIA(self.read(address) + carry - 1))
         self.tic()
         if not 0x80 <= address < 0x100:
             self.tic()
 
     def subAI(self, immediate):
-        self.A = self._subAI(immediate)
         self.pc += 1
+        self.A = self._subIA(immediate)
         self.tic()
 
     def clearBit(self, address, bit):
-        self.write(address, self.read(address) & ~(1 << bit))
+        # Tested on vendor's simulator: "ORG 0xfd BCLR PCL.0" jumps to next
+        # instruction, so PC was 0x before the bit gets set.
         self.pc += 1
-        self.tic()
+        self.write(address, self.read(address) & ~(1 << bit))
         if not 0x80 <= address < 0x100:
             self.tic()
+        self.tic()
 
     def setBit(self, address, bit):
-        self.write(address, self.read(address) | (1 << bit))
+        # Tested on vendor's simulator: "ORG 0xff BSET PCL.0" skips next
+        # instruction, so PC was 0x100 before the bit gets set.
         self.pc += 1
-        self.tic()
+        self.write(address, self.read(address) | (1 << bit))
         if not 0x80 <= address < 0x100:
             self.tic()
+        self.tic()
 
     def testBitZero(self, address, bit):
-        if self.read(address) & (1 << bit):
+        # Tested on vendor's simulator: "BTS0 PCL.0" on an odd address skips
+        # next instruction (so it saw 0, so PCL was even, so it was next
+        # instruction's address)
+        self.pc += 1
+        if not self.read(address) & (1 << bit):
             self.pc += 1
-        else:
-            self.pc += 2
             self.tic()
         self.tic()
 
     def testBitOne(self, address, bit):
+        # Tested on vendor's simulator: "BTS1 PCL.0" on an even address skips
+        # next instruction (so it saw 1, so PCL was odd, so it was next
+        # instruction's address)
+        self.pc += 1
         if self.read(address) & (1 << bit):
-            self.pc += 2
-            self.tic()
-        else:
             self.pc += 1
+            self.tic()
         self.tic()
 
-    def _inc(self, address, immediate):
-        address = self.bankify(address)
-        result = (
-            self.read(address) + immediate
-        ) & 0xff
+    def incAM(self, address, immediate):
+        # Tested on vendor's simulator: "DECS PCL" on a 256-aligned address
+        # puts 0 in A, so it saw 0x01 as PCL. It then skips next instruction,
+        # meaning there are 2 separate increments of PC for this test
+        # instruction.
+        # Similarly, "INCS PCL" store next instruction's address plus one,
+        # and skips next instruction if that value is zero.
+        self.pc += 1
+        self.A = result = (self.read(address) + immediate) & 0xff
         if result == 0:
-            self.pc += 2
-            self.tic()
-        else:
             self.pc += 1
+            self.tic()
         self.tic()
-        return address, result
 
-    def _incAM(self, address, immediate):
-        _, self.A = self._inc(address, immediate)
-
-    def _incMM(self, address, immediate):
-        address, result = self._inc(address, immediate)
+    def incMM(self, address, immediate):
+        # Tested on vendor(s simulator: "ORG 0xfd INCMS PCL" skips next
+        # instruction, despite FZ being cleared, meaning PCL was seen as 0xfe.
+        # Similarly, "ORG 0x100 DECMS PCL" jumps to next instruction, despite
+        # FZ being set, meaning "skip next instruction" re-reads PC after it
+        # was decremented.
+        # XXX "ORG 0xfe INCMS PCL" soft-freezes the emulator (PC stays on 0xfe
+        # while instruction counter runs until interrupted). Why ?
+        self.pc += 1
+        result = (self.read(address) + immediate) & 0xff
+        self.write(address, result)
+        if result == 0:
+            self.pc += 1
+            self.tic()
         if not 0x80 <= address < 0x100:
             self.tic()
-        self.write(address, result)
+        self.tic()
 
 def newChip(name):
     base = SN8
