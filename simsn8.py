@@ -491,90 +491,94 @@ class USB(object):
         self.toggle = value & 0x07
 
     @property
-    def crcerr(self):
+    def FCRCERR(self):
         return bool(self.status & 0x80)
 
-    @crcerr.setter
-    def crcerr(self, value):
+    @FCRCERR.setter
+    def FCRCERR(self, value):
         if value:
             self.status |= 0x80
         else:
             self.status &= 0x7f
 
     @property
-    def pkterr(self):
+    def FPKTERR(self):
         return bool(self.status & 0x40)
 
-    @pkterr.setter
-    def pkterr(self, value):
+    @FPKTERR.setter
+    def FPKTERR(self, value):
         if value:
             self.status |= 0x40
         else:
             self.status &= 0xcf
 
     @property
-    def sof(self):
+    def FSOF(self):
         return bool(self.status & 0x20)
 
-    @sof.setter
-    def sof(self, value):
+    @FSOF.setter
+    def FSOF(self, value):
         if value:
             self.status |= 0x20
+            #print 'USB interrupt: SOF'
+            self._interrupt()
         else:
             self.status &= 0xdf
 
     @property
-    def bus_reset(self):
+    def FBUS_RST(self):
         return bool(self.status & 0x10)
 
-    @bus_reset.setter
-    def bus_reset(self, value):
+    @FBUS_RST.setter
+    def FBUS_RST(self, value):
         if value:
             self.status |= 0x10
+            #print 'USB interrupt: BUS_RST'
             self._interrupt()
         else:
             self.status &= 0xef
 
     @property
-    def suspend(self):
+    def FSUSPEND(self):
         return bool(self.status & 0x08)
 
-    @suspend.setter
-    def suspend(self, value):
+    @FSUSPEND.setter
+    def FSUSPEND(self, value):
         if value:
             self.status |= 0x08
+            #print 'USB interrupt: SUSPEND'
             self._interrupt()
         else:
             self.status &= 0xf7
 
     @property
-    def ep0_setup(self):
+    def FEP0SETUP(self):
         return bool(self.status & 0x04)
 
-    @ep0_setup.setter
-    def ep0_setup(self, value):
+    @FEP0SETUP.setter
+    def FEP0SETUP(self, value):
         if value:
             self.status |= 0x04
         else:
             self.status &= 0xfc
 
     @property
-    def ep0_in(self):
+    def FEP0IN(self):
         return bool(self.status & 0x02)
 
-    @ep0_in.setter
-    def ep0_in(self, value):
+    @FEP0IN.setter
+    def FEP0IN(self, value):
         if value:
             self.status |= 0x02
         else:
             self.status &= 0xfd
 
     @property
-    def ep0_out(self):
+    def FEP0OUT(self):
         return bool(self.status & 0x01)
 
-    @ep0_out.setter
-    def ep0_out(self, value):
+    @FEP0OUT.setter
+    def FEP0OUT(self, value):
         if value:
             self.status |= 0x01
         else:
