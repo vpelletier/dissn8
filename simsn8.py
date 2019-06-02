@@ -113,6 +113,14 @@ class MainSeriesPort(object):
             self.status,
         )
 
+    def getState(self):
+        return {
+            'status': self.status,
+        }
+
+    def setState(self, state):
+        self.status = state['status']
+
     def reset(self):
         self.status = 0x00
 
@@ -156,6 +164,34 @@ class USB(object):
             self.address,
         )
 
+    def getState(self):
+        return {
+            'status': self.status,
+            'device_se0_start_time': self.device_se0_start_time,
+            'epbuf': self.epbuf[:],
+            'drive': self.drive,
+            'toggle': self.toggle,
+            'address': self.address,
+            'ep0enable': self.ep0enable,
+            'ep1enable': self.ep1enable,
+            'ep2enable': self.ep2enable,
+            'ep3enable': self.ep3enable,
+            'ep4enable': self.ep4enable,
+        }
+
+    def setState(self, state):
+        self.status = state['status']
+        self.device_se0_start_time = state['device_se0_start_time']
+        self.epbuf[:] = state['epbuf']
+        self.drive = state['drive']
+        self.toggle = state['toggle']
+        self.address = state['address']
+        self.ep0enable = state['ep0enable']
+        self.ep1enable = state['ep1enable']
+        self.ep2enable = state['ep2enable']
+        self.ep3enable = state['ep3enable']
+        self.ep4enable = state['ep4enable']
+
     def reset(self):
         self.status = 0x00
         self.device_se0_start_time = None
@@ -166,7 +202,7 @@ class USB(object):
         self.ep0enable = 0x00
         self.ep1enable = 0x00
         self.ep2enable = 0x00
-        self.ep0enable = 0x00
+        self.ep3enable = 0x00
         self.ep4enable = 0x00
 
     def readStatus(self):
@@ -571,6 +607,12 @@ class UART(object):
             id(self),
         )
 
+    def getState(self):
+        return {}
+
+    def setState(self, state):
+        pass
+
     def reset(self):
         pass
 
@@ -592,6 +634,12 @@ class AnalogToDigitalConverter(object):
             self.__class__.__name__,
             id(self),
         )
+
+    def getState(self):
+        return {}
+
+    def setState(self, state):
+        pass
 
     def reset(self):
         pass
@@ -644,6 +692,18 @@ class Port(object):
         if self.pull_up & mask:
             return self.vdd, self.pull_up_impedance
         return 0, INF
+
+    def getState(self):
+        return {
+            'direction': self.direction,
+            'pull_up': self.pull_up,
+            'value': self.value,
+        }
+
+    def setState(self, state):
+        self.direction = state['direction']
+        self.pull_up = state['pull_up']
+        self.value = state['value']
 
     def reset(self):
         self.direction = 0x00 # All in
@@ -705,6 +765,14 @@ class Watchdog(object):
             self.value,
         )
 
+    def getState(self):
+        return {
+            'value': self.value,
+        }
+
+    def setState(self, state):
+        self.value = state['value']
+
     def reset(self):
         self.value = 0
 
@@ -740,6 +808,22 @@ class Timer(object):
             self.internal_count,
             self.internal_mask,
         )
+
+    def getState(self):
+        return {
+            'mode': self.mode,
+            'value': self.value,
+            'reload': self.reload,
+            'internal_count': self.internal_count,
+            'internal_mask': self.internal_mask,
+        }
+
+    def setState(self, state):
+        self.mode = state['mode']
+        self.value = state['value']
+        self.reload = state['reload']
+        self.internal_count = state['internal_count']
+        self.internal_mask = state['internal_mask']
 
     def reset(self):
         self.mode = 0x00
@@ -1159,6 +1243,41 @@ class SN8(object):
             self._write_watcher_dict.pop(address)
         else:
             self._write_watcher_dict[address] = callback
+
+    def getState(self):
+        # State may contain:
+        # - dicts with deterministic sets of keys
+        # - vectors (lists or tuples, should not matter which)
+        # - integers (should be 0..0xffff)
+        # - None for uninitialised memory
+        # It should not contain anything else.
+        result = {
+            'A': self.A,
+            'ram': [0 if x in (VOLA, MISS) else x for x in self.ram],
+            'flash': self.flash[:],
+        }
+        for peripheral_name in (
+            'p0', 'p1', 'p2', 'p4', 'p5',
+            't0', 't1', 'tc0', 'tc1', 'tc2', 'watchdog',
+            'msp', 'usb', 'uart', 'adc',
+        ):
+            result[peripheral_name] = getattr(self, peripheral_name).getState()
+        return result
+
+    def setState(self, state):
+        for peripheral_name in (
+            'p0', 'p1', 'p2', 'p4', 'p5',
+            't0', 't1', 'tc0', 'tc1', 'tc2', 'watchdog',
+            'msp', 'usb', 'uart', 'adc',
+        ):
+            getattr(self, peripheral_name).setState(state[peripheral_name])
+        self.A = state['A']
+        ram = self.ram
+        state_ram = state['ram']
+        for index, cell in enumerate(ram):
+            if cell not in (MISS, VOLA):
+                ram[index] = state_ram[index]
+        self.flash[:] = state['flash']
 
     def reset(self, source):
         self.ram[0x80:0x100] = REGISTERS_RESET_VALUE_LIST
