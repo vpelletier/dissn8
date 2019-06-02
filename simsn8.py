@@ -1278,10 +1278,9 @@ class SN8(object):
             if cell not in (MISS, VOLA):
                 ram[index] = state_ram[index]
         self.flash[:] = state['flash']
+        self._reloadCodeOptions()
 
-    def reset(self, source):
-        self.ram[0x80:0x100] = REGISTERS_RESET_VALUE_LIST
-        self.PFLAG = (self.PFLAG & 0x3f) | source
+    def _reloadCodeOptions(self):
         code_options = self.flash[0x2fff]
         self.watchdog_enabled = code_options & 0x0f00 != 0b1010
         self.watchdog_always_on = code_options & 0x0f00 == 0
@@ -1290,6 +1289,11 @@ class SN8(object):
         self.slow_clock_threshold = (
             self.low_speed_cycle_duration_ms / self.high_speed_cycle_duration_ms
         )
+
+    def reset(self, source):
+        self.ram[0x80:0x100] = REGISTERS_RESET_VALUE_LIST
+        self.PFLAG = (self.PFLAG & 0x3f) | source
+        self._reloadCodeOptions()
         for subsystem in (
             self.p0, self.p1, self.p2, self.p4, self.p5,
             self.watchdog,
