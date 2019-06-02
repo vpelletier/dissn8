@@ -346,17 +346,19 @@ class Assembler(object):
             y: x for x, y in value_names.iteritems()
         }[production[3]] << shift
 
+    def _findFile(self, include_filename):
+        for include_path in [os.path.dirname(self.filename)] + self.include:
+            path = os.path.join(include_path, include_filename)
+            if os.path.exists(path):
+                return path
+        return include_filename
+
     def p_include(self, production):
         '''
         include : INCLUDE STRING EOL
         '''
-        include_filename = production[2]
-        for include_path in [os.path.dirname(self.filename)] + self.include:
-            path = os.path.join(include_path, include_filename)
-            if os.path.exists(path):
-                break
         try:
-            with open(path) as infile:
+            with open(self._findFile(production[2])) as infile:
                 self._parse(infile)
         except Exception:
             print('Error while processing %r, included from %s:%i:' % (
@@ -374,7 +376,7 @@ class Assembler(object):
         '''
         include : INCLUDEBIN STRING EOL
         '''
-        with open(production[2], 'rb') as infile:
+        with open(self._findFile(production[2]), 'rb') as infile:
             while True:
                 chunk = infile.read(2)
                 if len(chunk) == 2:
