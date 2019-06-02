@@ -1252,7 +1252,11 @@ class SN8(object):
         # - None for uninitialised memory
         # It should not contain anything else.
         result = {
+            'run_time': self.run_time,
+            'cycle_count': self.cycle_count,
+            'slow_clock': self.slow_clock,
             'A': self.A,
+            'push_buf': self.push_buf,
             'ram': [0 if x in (VOLA, MISS) else x for x in self.ram],
             'flash': self.flash[:],
         }
@@ -1271,7 +1275,11 @@ class SN8(object):
             'msp', 'usb', 'uart', 'adc',
         ):
             getattr(self, peripheral_name).setState(state[peripheral_name])
+        self.run_time = state['run_time']
+        self.cycle_count = state['cycle_count']
+        self.slow_clock = state['slow_clock']
         self.A = state['A']
+        self.push_buf = state['push_buf']
         ram = self.ram
         state_ram = state['ram']
         for index, cell in enumerate(ram):
