@@ -15,14 +15,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 """
-FOR INTERACTIVE USE ONLY !
-This is not a python module, do not import it - run it.
+SN8 assembler.
 """
 from __future__ import absolute_import
 import argparse
 import ast
 from collections import defaultdict
 import errno
+from io import StringIO
 import os.path
 from struct import pack
 import sys
@@ -36,6 +36,8 @@ from .libsn8 import (
     ZRO_SPACE, RAM_SPACE, ROM_SPACE,
     parseConfig,
 )
+
+__all__ = ('assemble', )
 
 CONFIG_DIR = os.path.dirname(__file__)
 
@@ -348,6 +350,8 @@ class Assembler(object):
         }[production[3]] << shift
 
     def _findFile(self, include_filename):
+        if self.include is None:
+            raise ValueError('Imports are disabled')
         for include_path in [os.path.dirname(self.filename)] + self.include:
             path = os.path.join(include_path, include_filename)
             if os.path.exists(path):
@@ -826,6 +830,26 @@ class Assembler(object):
                 right,
             ))
 
+def assemble(source, include=None):
+    """
+    Assemble given source and return binary image.
+
+    include (None, list of strings)
+        List of paths to resolve included paths from.
+        If None, inclusion is forbidden.
+    """
+    source_file = StringIO(source)
+    source_file.name = 'noname.asm'
+    getRomWord = Assembler(
+        source_file=source_file,
+        debug=False,
+        include=include,
+    ).rom.get
+    return b''.join(
+        pack('<H', getRomWord(x, 0))
+        for x in xrange(0x3000)
+    )
+
 def main():
     parser = argparse.ArgumentParser(description='SN8F2288 assembler')
     parser.add_argument(
@@ -858,7 +882,7 @@ def main():
         assembler = Assembler(infile, debug=args.debug, include=sum(args.include, []))
     with args.output as outfile:
         write = outfile.write
-        for address in range(0x3000):
+        for address in xrange(0x3000):
             write(pack('<H', assembler.rom.get(address, 0)))
 
 if __name__ == '__main__':
