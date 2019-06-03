@@ -257,5 +257,79 @@ class SimSN8F2288Tests(unittest.TestCase):
         sim.step()
         self.assertStrippedDifferenceEqual(state2, sim.getState(), EQUAL)
 
+    def testPushPop(self):
+        sim = self._getSimulator(u'''
+                MOV     A, #0xaa
+                B0BSET  FC
+                B0BSET  FZ
+                PUSH
+                MOV     A, #0x55
+                B0BCLR  FC
+                B0BSET  FDC
+                POP
+        ''')
+        state0 = sim.getState()
+        sim.step() # MOV A, I
+        sim.step() # B0BSET M.b
+        sim.step() # B0BSET M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 3, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xaa,
+                'ram': {
+                    sim.addressOf('PFLAG'): 0b10000101,
+                    sim.addressOf('PCL'): 0x03,
+                },
+            },
+        )
+        sim.step() # PUSH
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 1, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x04,
+                },
+                # push buffer is considered out-of-ram, and not visible in
+                # vendor's simulator. So order should not really matter.
+                # Also, whether PFLAG is masked at push does not really matter.
+                'push_buf': {
+                    0: 0xaa,
+                    1: 0b00000101,
+                },
+            },
+        )
+        sim.step() # MOV A, I
+        sim.step() # B0BCLR M.b
+        sim.step() # B0BSET M.b
+        state3 = sim.getState()
+        self.assertEqual(state2['cycle_count'] + 3, state3['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state2, state3,
+            {
+                'A': 0x55,
+                'ram': {
+                    sim.addressOf('PFLAG'): 0b10000011,
+                    sim.addressOf('PCL'): 0x07,
+                },
+            },
+        )
+        sim.step() # POP
+        state4 = sim.getState()
+        self.assertEqual(state3['cycle_count'] + 1, state4['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state3, state4,
+            {
+                'A': 0xaa,
+                'ram': {
+                    sim.addressOf('PFLAG'): 0b10000101,
+                    sim.addressOf('PCL'): 0x08,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
