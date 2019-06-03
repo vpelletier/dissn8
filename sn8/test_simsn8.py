@@ -210,5 +210,52 @@ class SimSN8F2288Tests(unittest.TestCase):
         self._testMOV_BSET_BCLR(1)
         self._testMOV_BSET_BCLR(2)
 
+    def testInterrupt_RETI(self):
+        sim = self._getSimulator(u'''
+                B0BSET  FGIE
+                JMP     $
+            ORG 8
+                RETI
+        ''')
+        sim.step() # B0BSET FGIE
+        self.assertTrue(sim.FGIE)
+        state0 = sim.getState()
+        # One jump, to check that RETI will obey current instruction and not go
+        # to next address.
+        sim.step()
+        # Interrupt
+        sim.interrupt()
+        state1 = sim.getState()
+        # XXX: no cycle count check, as it does not seem specified.
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x08,
+                    #sim.addressOf('PCH'): 0x00, # Unchanged
+                    sim.addressOf('STKP'): 6, # FGIE cleared
+                    sim.addressOf('STK0L'): 0x01,
+                    #sim.addressOf('STK0H'): 0x00, # Unchanged
+                },
+            },
+        )
+        # RETI
+        sim.step()
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x01,
+                    #sim.addressOf('PCH'): 0x00, # Unchanged
+                    sim.addressOf('STKP'): 0x87, # FGIE set
+                },
+            },
+        )
+        # One jump, checking that RETI did not escape codepath.
+        sim.step()
+        self.assertStrippedDifferenceEqual(state2, sim.getState(), EQUAL)
+
 if __name__ == '__main__':
     unittest.main()
