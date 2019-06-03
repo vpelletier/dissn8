@@ -98,5 +98,45 @@ class SimSN8F2288Tests(unittest.TestCase):
         self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
         self.assertEqual(self._stripStateTiming(state0), self._stripStateTiming(state1))
 
+    def testCALL_RET(self):
+        sim = self._getSimulator(u'''
+                CALL func
+                JMP  $
+            ORG 0x1234
+            func:
+                RET
+        ''')
+        state0 = sim.getState()
+        # CALL
+        sim.step()
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertEqual(
+            diff(self._stripStateTiming(state0), self._stripStateTiming(state1)),
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x34,
+                    sim.addressOf('PCH'): 0x12,
+                    sim.addressOf('STKP'): 6,
+                    sim.addressOf('STK0L'): 0x01,
+                    #sim.addressOf('STK0H'): 0x00, # Unchanged
+                },
+            },
+        )
+        # RET
+        sim.step()
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
+        self.assertEqual(
+            diff(self._stripStateTiming(state1), self._stripStateTiming(state2)),
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x01,
+                    sim.addressOf('PCH'): 0x00,
+                    sim.addressOf('STKP'): 7,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()

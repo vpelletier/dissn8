@@ -1398,7 +1398,7 @@ class SN8(object):
         stkp = self.STKP & 0x7f
         if stkp == 0:
             warnings.warn('Stack pointer underflow')
-        offset = (7 - stkp) * 2
+        offset = stkp * 2
         self.write(self.addressOf('STK7L') + offset, self.PCL)
         self.write(self.addressOf('STK7H') + offset, self.PCH)
         self.STKP = (self.STKP & 0x80) | ((stkp - 1) & 0x07)
@@ -1413,7 +1413,7 @@ class SN8(object):
         if stkp == 7:
             warnings.warn('Stack pointer overflow')
         stkp += 1
-        offset = (7 - stkp) * 2
+        offset = stkp * 2
         self.STKP = (self.STKP & 0x80) | (stkp & 0x07)
         self.jump(
             (
