@@ -92,6 +92,15 @@ class SimSN8F2288Tests(unittest.TestCase):
             if x not in ('run_time', 'cycle_count', 'slow_clock')
         }
 
+    def assertStrippedDifferenceEqual(self, state0, state1, expected):
+        self.assertEqual(
+            diff(
+                self._stripStateTiming(state0),
+                self._stripStateTiming(state1),
+            ),
+            expected,
+        )
+
     def testJMP(self):
         sim = self._getSimulator(u'JMP $')
         state0 = sim.getState()
@@ -113,8 +122,8 @@ class SimSN8F2288Tests(unittest.TestCase):
         sim.step()
         state1 = sim.getState()
         self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
-        self.assertEqual(
-            diff(self._stripStateTiming(state0), self._stripStateTiming(state1)),
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
             {
                 'ram': {
                     sim.addressOf('PCL'): 0x34,
@@ -129,8 +138,8 @@ class SimSN8F2288Tests(unittest.TestCase):
         sim.step()
         state2 = sim.getState()
         self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
-        self.assertEqual(
-            diff(self._stripStateTiming(state1), self._stripStateTiming(state2)),
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
             {
                 'ram': {
                     sim.addressOf('PCL'): 0x01,
