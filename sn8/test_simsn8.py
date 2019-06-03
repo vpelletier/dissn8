@@ -149,5 +149,66 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def _testMOV_BSET_BCLR(self, bank):
+        sim = self._getSimulator(u'''
+                MOV     A, #0x55
+                MOV     0x00, A
+                B0MOV   0x01, A
+                BCLR    0x00.0
+                BSET    0x00.1
+                B0BCLR  0x01.4
+                B0BSET  0x01.5
+        ''')
+        bank_address = bank << 8
+        sim.RBANK = bank
+        state0 = sim.getState()
+        sim.step() # MOV A, #
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x55,
+                'ram': {
+                    sim.addressOf('PCL'): 0x01,
+                },
+            },
+        )
+        sim.step() # MOV M, A
+        sim.step() # B0MOV M, A
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'ram': {
+                    bank_address + 0x00: 0x55,
+                    0x01: 0x55,
+                    sim.addressOf('PCL'): 0x03,
+                },
+            },
+        )
+        sim.step() # BCLR M.b
+        sim.step() # BSET M.b
+        sim.step() # B0BCLR M.b
+        sim.step() # B0BSET M.b
+        state3 = sim.getState()
+        self.assertEqual(state2['cycle_count'] + 8, state3['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state2, state3,
+            {
+                'ram': {
+                    bank_address + 0x00: 0x56,
+                    0x01: 0x65,
+                    sim.addressOf('PCL'): 0x07,
+                },
+            },
+        )
+
+    def testMOV_BSET_BCLR(self):
+        self._testMOV_BSET_BCLR(0)
+        self._testMOV_BSET_BCLR(1)
+        self._testMOV_BSET_BCLR(2)
+
 if __name__ == '__main__':
     unittest.main()
