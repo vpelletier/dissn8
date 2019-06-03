@@ -42,9 +42,9 @@ def _diffVector(a, b):
     if len(a) != len(b):
         raise ValueError(len(a), len(b))
     for index, (item_a, item_b) in enumerate(zip(a, b)):
-        item_diff = diff(a, b)
+        item_diff = diff(item_a, item_b)
         if item_diff is not EQUAL:
-            result[index] = b
+            result[index] = item_b
     if result:
         return result
     return EQUAL
@@ -57,12 +57,12 @@ _type_diff = {
     list: _diffVector,
     tuple: _diffVector,
     int: _diffValue,
-    None: _diffValue,
+    type(None): _diffValue,
 }
 
 def diff(a, b):
-    if type(a) == type(b):
-        raise TypeError(a, b)
+    if type(a) != type(b):
+        raise TypeError(type(a), type(b))
     return _type_diff[type(a)](a, b)
 
 class SimSN8F2288Tests(unittest.TestCase):
