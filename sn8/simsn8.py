@@ -16,9 +16,13 @@
 
 from __future__ import absolute_import
 from functools import partial
+import os.path
 from struct import unpack
 import warnings
-from libsn8 import parseConfig
+from .libsn8 import parseConfig
+
+CONFIG_DIR = os.path.dirname(__file__)
+print 'CONFIG_DIR', repr(CONFIG_DIR)
 
 try:
     _ = ord(b'\x00'[0])
@@ -343,6 +347,7 @@ class USB(object):
         cpu.FUE0M0 = 0
         cpu.FUE0M1 = 0
         cpu.FEP0SETUP = 1
+        #print 'USB interrupt: FEP0SETUP'
         self._interrupt()
 
     def _checkEndpoint(self, endpoint):
@@ -393,6 +398,7 @@ class USB(object):
                     cpu.FEP3_NAK = 1
                 elif endpoint == 4:
                     cpu.FEP4_NAK = 1
+                #print 'USB interrupt: FEP%i_NAK' % endpoint
                 self._interrupt()
             raise EndpointNAK
         if has_pending_events:
@@ -419,7 +425,9 @@ class USB(object):
         length = len(data)
         if length > stop - start:
             raise ValueError('Data too long for endpoint buffer')
+        #print 'writing', length, 'bytes'
         for index, value in enumerate(data, start):
+            #print 'writing', index, hex(byte_ord(value))
             self.epbuf[index] = byte_ord(value)
         if endpoint == 0:
             cpu.FUE0M0 = 0
@@ -441,6 +449,7 @@ class USB(object):
             cpu.FUE4M0 = 0
             cpu.UE4R_C = length
             cpu.FEP4_ACK = 1
+        #print 'USB interrupt: send(%i) ACK' % endpoint
         self._interrupt()
 
     def recv(self, endpoint):
@@ -481,6 +490,7 @@ class USB(object):
         elif endpoint == 4:
             cpu.FUE4M0 = 0
             cpu.FEP4_ACK = 1
+        #print 'USB interrupt: recv(%i) ACK' % endpoint
         self._interrupt()
         return result
 
@@ -1418,6 +1428,10 @@ class SN8(object):
             self.FGIE = False
             # XXX: assuming interrupt has 2-cycle duration, like a normal call
             self._call(0x0008) # TODO: symbolic name from config file
+        #else:
+        #    print 'Lost interrupt'
+        #    import traceback
+        #    traceback.print_stack()
 
     def reti(self):
         # XXX: assuming interrupts are re-enabled before jumping back (so tics
@@ -1602,6 +1616,7 @@ class SN8(object):
         self.FC = value == byte_value
         self.FDC = value & 0xf0 == a & 0xf0
         self.FZ = byte_value == 0
+        #print "%#04x - %#+05x = %#+05x, masked: %#04x C=%i DC=%i Z=%i" % (a, immediate, value, byte_value, self.FC, self.FDC, self.FZ)
         return byte_value
 
     def subAM(self, address, carry=1):
@@ -1610,6 +1625,15 @@ class SN8(object):
         self.tic()
 
     def subMA(self, address, carry=1):
+        # read, pc increment and write order confirmed using vendor's
+        # simulator:
+        # ORG 0
+        #   MOV A, #2  ; pc=0
+        #   SUB PCL, A ; pc=1, doing pc=pc-2 jumps to 0 and not to 0xff
+        # (side note: vendor's emulator soft-freezes when jumping below 0, as
+        # if addredd -1 contained "JMP $")
+        # XXX: vendor's simulator behaves strangely: "SUB PCL, A" jumps to
+        # 0x2000, apparently whatever A and ORG are.
         self.pc += 1
         self.write(address, self._subIA(self.read(address) + carry - 1))
         self.tic()
@@ -1693,7 +1717,9 @@ class SN8(object):
 
 def newChip(name):
     base = SN8
-    config = parseConfig([open(name.lower() + '.cfg')])
+    config = parseConfig([open(
+        os.path.join(CONFIG_DIR, name.lower() + '.cfg')
+    )])
     # TODO: pull more from config, and de-hardcode from SN8
     dikt = {}
     for address, register_name in config['ram-reserved'].iteritems():

@@ -14,18 +14,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-"""
-FOR INTERACTIVE USE ONLY !
-This is not a python module, do not import it - run it.
-"""
-from __future__ import print_function
+from __future__ import print_function, absolute_import
 import argparse
 from collections import defaultdict
 import itertools
 import os
 from struct import unpack
 import sys
-from libsn8 import (
+from .libsn8 import (
     NUL_SPACE, ZRO_SPACE, RAM_SPACE, ROM_SPACE, IMM_SPACE,
     NONXT, NEXTI, BRNCH, JUMPI,
     Operand, NoOperand,

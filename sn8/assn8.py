@@ -18,6 +18,7 @@
 FOR INTERACTIVE USE ONLY !
 This is not a python module, do not import it - run it.
 """
+from __future__ import absolute_import
 import argparse
 import ast
 from collections import defaultdict
@@ -29,7 +30,7 @@ import traceback
 import warnings
 from ply.yacc import yacc
 from ply.lex import lex
-from libsn8 import (
+from .libsn8 import (
     opcode_dict,
     BitAddress, Address, Immediate, NoOperand,
     ZRO_SPACE, RAM_SPACE, ROM_SPACE,
