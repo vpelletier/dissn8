@@ -22,7 +22,6 @@ import warnings
 from .libsn8 import parseConfig
 
 CONFIG_DIR = os.path.dirname(__file__)
-print 'CONFIG_DIR', repr(CONFIG_DIR)
 
 try:
     _ = ord(b'\x00'[0])
