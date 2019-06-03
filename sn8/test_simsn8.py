@@ -61,7 +61,9 @@ _type_diff = {
 }
 
 def diff(a, b):
-    if type(a) != type(b):
+    diff_a = _type_diff[type(a)]
+    diff_b = _type_diff[type(b)]
+    if diff_a is not diff_b:
         raise TypeError(type(a), type(b))
     return _type_diff[type(a)](a, b)
 
