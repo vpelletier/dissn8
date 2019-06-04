@@ -416,5 +416,82 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def test_XCH(self):
+        sim = self._getSimulator(u'''
+                MOV     A, #1
+                B0MOV   RBANK, A
+                MOV     A, #0x55
+                MOV     0x00, A
+                B0MOV   R, #0xff
+                MOV     A, #0
+                B0XCH   A, R
+                XCH     A, 0x00
+                MOV     A, #0
+                B0MOV   RBANK, A
+                XCH     A, PCL
+        ''')
+        state0 = sim.getState()
+        sim.step() # MOV A, I
+        sim.step() # B0MOV M, A
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        sim.step() # B0MOV M, I
+        sim.step() # MOV A, I
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 6, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x00,
+                'ram': {
+                    sim.addressOf('R'): 0xff,
+                    sim.addressOf('RBANK'): 0x01,
+                    sim.addressOf('PCL'): 0x06,
+                    0x0100: 0x55,
+                },
+            },
+        )
+        sim.step() # B0XCH
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 1, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'A': 0xff,
+                'ram': {
+                    sim.addressOf('R'): 0x00,
+                    sim.addressOf('PCL'): 0x07,
+                },
+            },
+        )
+        sim.step() # XCH
+        state3 = sim.getState()
+        self.assertEqual(state2['cycle_count'] + 2, state3['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state2, state3,
+            {
+                'A': 0x55, # Address after XCH, coming from PCL
+                'ram': {
+                    0x0100: 0xff,
+                    sim.addressOf('PCL'): 0x08,
+                },
+            },
+        )
+        sim.step() # MOV A, I
+        sim.step() # B0MOV M, A
+        sim.step() # XCH
+        state4 = sim.getState()
+        self.assertEqual(state3['cycle_count'] + 3, state4['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state3, state4,
+            {
+                'A': 0x0b, # Address after XCH, coming from PCL
+                'ram': {
+                    sim.addressOf('RBANK'): 0x00,
+                    sim.addressOf('PCL'): 0x00,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
