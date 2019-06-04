@@ -65,7 +65,7 @@ def diff(a, b):
     diff_b = _type_diff[type(b)]
     if diff_a is not diff_b:
         raise TypeError(type(a), type(b))
-    return _type_diff[type(a)](a, b)
+    return diff_a(a, b)
 
 class SimSN8F2288Tests(unittest.TestCase):
     @staticmethod
