@@ -370,5 +370,51 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def test_MOVC(self):
+        sim = self._getSimulator(u'''
+        .DATA
+        data    EQU 0x2345
+        .CODE
+        ORG 0
+                MOV     A, #data$M
+                B0MOV   Y, A
+                MOV     A, #data$L
+                B0MOV   Z, A
+                MOVC
+        ORG data
+                DW      0x1234
+        ''')
+        state0 = sim.getState()
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 4, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x45,
+                'ram': {
+                    sim.addressOf('Y'): 0x23,
+                    sim.addressOf('Z'): 0x45,
+                    sim.addressOf('PCL'): 0x04,
+                },
+            },
+        )
+        sim.step()
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'A': 0x34,
+                'ram': {
+                    sim.addressOf('R'): 0x12,
+                    sim.addressOf('PCL'): 0x05,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
