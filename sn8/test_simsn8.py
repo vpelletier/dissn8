@@ -493,5 +493,60 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def test_SWAP(self):
+        sim = self._getSimulator(u'''
+                MOV     A, #1
+                B0MOV   RBANK, A
+                MOV     A, #0xf0
+                MOV     0x00, A
+                SWAP    0x00
+                MOV     A, #0
+                SWAPM   0x00
+        ''')
+        state0 = sim.getState()
+        sim.step() # MOV A, I
+        sim.step() # B0MOV M, A
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 4, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xf0,
+                'ram': {
+                    sim.addressOf('RBANK'): 0x01,
+                    sim.addressOf('PCL'): 0x04,
+                    0x0100: 0xf0,
+                },
+            },
+        )
+        sim.step() # SWAP
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 1, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'A': 0x0f,
+                'ram': {
+                    sim.addressOf('PCL'): 0x05,
+                },
+            },
+        )
+        sim.step() # MOV A, I
+        sim.step() # SWAPM
+        state3 = sim.getState()
+        self.assertEqual(state2['cycle_count'] + 3, state3['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state2, state3,
+            {
+                'A': 0x00,
+                'ram': {
+                    sim.addressOf('PCL'): 0x07,
+                    0x0100: 0x0f,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
