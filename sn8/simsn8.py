@@ -323,8 +323,6 @@ class USB(object):
 
     def _interrupt(self):
         cpu = self.cpu
-        if getattr(cpu, self.irq_name):
-            raise RuntimeError('USB interrupt already pending')
         setattr(cpu, self.irq_name, 1)
         if getattr(cpu, self.ien_name):
             cpu.interrupt()
@@ -1443,9 +1441,6 @@ class SN8(object):
         # can interrupt again).
         self.FGIE = True
         self.ret()
-        if (self.INTRQ & self.INTEN) or (self.INTRQ1 & self.INTEN1):
-            #print 're-triggering interrupt: %#04x %#04x' % (self.INTRQ, self.INTRQ1)
-            self.interrupt()
 
     def push(self):
         self.pc += 1
