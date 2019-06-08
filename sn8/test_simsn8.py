@@ -60,6 +60,9 @@ _type_diff = {
     type(None): _diffValue,
 }
 
+# XXX: A limitation of this is that it only detects actual changes. If an item
+# is written to with the same value (ex: clearing an already cleared FZ), it
+# will not be detected.
 def diff(a, b):
     diff_a = _type_diff[type(a)]
     diff_b = _type_diff[type(b)]
