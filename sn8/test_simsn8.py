@@ -128,15 +128,20 @@ class SimSN8F2288Tests(unittest.TestCase):
 
     def testCALL_RET(self):
         sim = self._getSimulator(u'''
-                CALL func
-                JMP  $
+                CALL    func
+                MOV     A, #0x01
+                B0MOV   STKP, A
+                CALL    func2
+                JMP     $
             ORG 0x1234
             func:
                 RET
+            func2:
+                CALL    func
+                RET
         ''')
         state0 = sim.getState()
-        # CALL
-        sim.step()
+        sim.step() # CALL
         state1 = sim.getState()
         self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
         self.assertStrippedDifferenceEqual(
@@ -151,8 +156,7 @@ class SimSN8F2288Tests(unittest.TestCase):
                 },
             },
         )
-        # RET
-        sim.step()
+        sim.step() # RET
         state2 = sim.getState()
         self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
         self.assertStrippedDifferenceEqual(
@@ -162,6 +166,65 @@ class SimSN8F2288Tests(unittest.TestCase):
                     sim.addressOf('PCL'): 0x01,
                     sim.addressOf('PCH'): 0x00,
                     sim.addressOf('STKP'): 7,
+                },
+            },
+        )
+        sim.step() # MOV A, I
+        sim.step() # B0MOV M, A
+        state0 = sim.getState()
+        sim.step() # CALL
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x35,
+                    sim.addressOf('PCH'): 0x12,
+                    sim.addressOf('STKP'): 0,
+                    sim.addressOf('STK6L'): 0x04,
+                    #sim.addressOf('STK6H'): 0x00, # Unchanged
+                },
+            },
+        )
+        sim.step() # CALL
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x34,
+                    #sim.addressOf('PCH'): 0x12, # Unchanged
+                    sim.addressOf('STKP'): 7,
+                    sim.addressOf('STK7L'): 0x36,
+                    sim.addressOf('STK7H'): 0x12,
+                },
+            },
+        )
+        sim.step() # RET
+        state3 = sim.getState()
+        self.assertEqual(state2['cycle_count'] + 2, state3['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state2, state3,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x36,
+                    #sim.addressOf('PCH'): 0x12, # Unchanged
+                    sim.addressOf('STKP'): 0,
+                },
+            },
+        )
+        sim.step() # RET
+        state4 = sim.getState()
+        self.assertEqual(state3['cycle_count'] + 2, state4['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state3, state4,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x04,
+                    sim.addressOf('PCH'): 0x00,
+                    sim.addressOf('STKP'): 1,
                 },
             },
         )

@@ -1078,6 +1078,7 @@ class SN8(object):
             0x2c00: lambda x: self.xch(self.bankify(x)),      # XCH M
             0x0200:           self.xch,                       # B0XCH M
         }
+        self._stkp_underflow = False
         # Power-on reset
         self.reset(RESET_SOURCE_LOW_VOLTAGE)
 
@@ -1394,13 +1395,15 @@ class SN8(object):
         self.tic()
 
     def _call(self, addr):
-        stkp = self.STKP & 0x7f
+        stkp = self.STKP & 0x07
         if stkp == 0:
+            self._stkp_underflow = True
+        elif stkp == 7 and self._stkp_underflow:
             warnings.warn('Stack pointer underflow')
         offset = stkp * 2
         self.write(self.addressOf('STK7L') + offset, self.PCL)
         self.write(self.addressOf('STK7H') + offset, self.PCH)
-        self.STKP = (self.STKP & 0x80) | ((stkp - 1) & 0x07)
+        self.STKP = (self.STKP & 0xf8) | ((stkp - 1) & 0x07)
         self.jump(addr)
 
     def call(self, addr):
@@ -1408,12 +1411,15 @@ class SN8(object):
         self._call(addr)
 
     def ret(self):
-        stkp = self.STKP & 0x7f
+        stkp = self.STKP & 0x07
         if stkp == 7:
-            warnings.warn('Stack pointer overflow')
-        stkp += 1
+            if self._stkp_underflow:
+                self._stkp_underflow = False
+            else:
+                warnings.warn('Stack pointer overflow')
+        stkp = (stkp + 1) & 0x07
         offset = stkp * 2
-        self.STKP = (self.STKP & 0x80) | (stkp & 0x07)
+        self.STKP = (self.STKP & 0xf8) | stkp
         self.jump(
             (
                 (
