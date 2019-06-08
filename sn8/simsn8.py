@@ -1515,8 +1515,6 @@ class SN8(object):
         self.pc += 1
         self.A = value = logic(self.A, self.read(address))
         self.FZ = value == 0
-        if not 0x80 <= address < 0x100:
-            self.tic()
         self.tic()
 
     def logicMA(self, address, logic):
