@@ -102,12 +102,26 @@ class SimSN8F2288Tests(unittest.TestCase):
         )
 
     def testJMP(self):
-        sim = self._getSimulator(u'JMP $')
+        sim = self._getSimulator(u'''
+                NOP
+                JMP $
+        ''')
         state0 = sim.getState()
         sim.step()
         state1 = sim.getState()
-        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
-        self.assertEqual(self._stripStateTiming(state0), self._stripStateTiming(state1))
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x01,
+                },
+            },
+        )
+        sim.step()
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 2, state2['cycle_count'])
+        self.assertEqual(self._stripStateTiming(state1), self._stripStateTiming(state2))
 
     def testCALL_RET(self):
         sim = self._getSimulator(u'''
