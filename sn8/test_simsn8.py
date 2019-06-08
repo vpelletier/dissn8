@@ -666,5 +666,82 @@ class SimSN8F2288Tests(unittest.TestCase):
         self._test_logic('OR ', (0xff, 0xff))
         self._test_logic('XOR', (0xff, 0xf1))
 
+    def test_rotor(self):
+        sim = self._getSimulator(u'''
+                B0MOV   RBANK, #1
+                MOV     A, #0xa5
+                MOV     0x00, A
+                RLC     0x00
+                MOV     A, #0
+                B0BCLR  FC
+                RLCM    0x00
+                RRC     0x00
+                MOV     A, #0
+                B0BSET  FC
+                RRCM    0x00
+        ''')
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        state0 = sim.getState()
+        sim.step() # RLC M
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x4a,
+                'ram': {
+                    sim.addressOf('PCL'): 0x04,
+                    sim.addressOf('PFLAG'): 0x84, # FC set
+                },
+            },
+        )
+        sim.step() # MOV A, I
+        sim.step() # B0BCLR FC
+        state2 = sim.getState()
+        sim.step() # RLCM M
+        state3 = sim.getState()
+        self.assertEqual(state2['cycle_count'] + 2, state3['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state2, state3,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x07,
+                    sim.addressOf('PFLAG'): 0x84, # FC set
+                    0x100: 0x4a,
+                },
+            },
+        )
+        sim.step() # RRC M
+        state4 = sim.getState()
+        self.assertEqual(state3['cycle_count'] + 1, state4['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state3, state4,
+            {
+                'A': 0xa5,
+                'ram': {
+                    sim.addressOf('PCL'): 0x08,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear
+                },
+            },
+        )
+        sim.step() # MOV A, I
+        sim.step() # B0BSET FC
+        state5 = sim.getState()
+        sim.step() # RRCM M
+        state6 = sim.getState()
+        self.assertEqual(state5['cycle_count'] + 2, state6['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state5, state6,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x0b,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear
+                    0x100: 0xa5
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
