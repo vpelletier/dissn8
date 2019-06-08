@@ -999,5 +999,24 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def test_jumpTable(self):
+        sim = self._getSimulator(u'''
+                MOV     A, #0x05
+                B0ADD   PCL, A
+        ''')
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # B0ADD PCL, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x07,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
