@@ -548,5 +548,84 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def _test_logic(self, instruction, expected):
+        res0, res1 = expected
+        # Operations chosen so that:
+        # - at least one produces a 0
+        # - the 2 variable results differ for all 3 instructions
+        # - all 3 variants are exercised (AM, MA, AI)
+        # - for AM and MA variants, result differs from both operands
+        sim = self._getSimulator(u'''
+                MOV     A, #1
+                B0MOV   RBANK, A
+                MOV     A, #0x0f
+                MOV     0x00, A
+                B0B%(z0)s FZ
+                MOV     A, #0xf0
+                %(ins)s A, 0x00     ; 0x0f ins 0xf0
+                B0B%(z1)s FZ
+                MOV     A, #0xfe
+                %(ins)s 0x00, A     ; 0x0f ins 0xfe
+                B0BCLR  FZ
+                MOV     A, #0
+                %(ins)s A, #0       ; 0x00 ins 0x00
+        ''' % {
+            'ins': instruction,
+            'z0': 'SET' if res0 else 'CLR',
+            'z1': 'SET' if res1 else 'CLR',
+        })
+        for _ in xrange(6):
+            sim.step()
+        state_before = sim.getState()
+        sim.step()
+        state_after = sim.getState()
+        self.assertEqual(state_before['cycle_count'] + 1, state_after['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state_before, state_after,
+            {
+                'A': res0,
+                'ram': {
+                    sim.addressOf('PCL'): 0x07,
+                    sim.addressOf('PFLAG'): 0x80 | (0 if res0 else 1),
+                },
+            },
+        )
+        sim.step()
+        sim.step()
+        state_before = sim.getState()
+        sim.step()
+        state_after = sim.getState()
+        self.assertEqual(state_before['cycle_count'] + 2, state_after['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state_before, state_after,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x0a,
+                    sim.addressOf('PFLAG'): 0x80 | (0 if res1 else 1),
+                    0x100: res1,
+                },
+            },
+        )
+        sim.step()
+        sim.step()
+        state_before = sim.getState()
+        sim.step()
+        state_after = sim.getState()
+        self.assertEqual(state_before['cycle_count'] + 1, state_after['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state_before, state_after,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x0d,
+                    sim.addressOf('PFLAG'): 0x81, # FZ set
+                },
+            },
+        )
+
+    def test_logic(self):
+        self._test_logic('AND', (0x00, 0x0e))
+        self._test_logic('OR ', (0xff, 0xff))
+        self._test_logic('XOR', (0xff, 0xf1))
+
 if __name__ == '__main__':
     unittest.main()
