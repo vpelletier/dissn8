@@ -175,6 +175,7 @@ class SimSN8F2288Tests(unittest.TestCase):
                 MOV     A, #0
                 MOV     0x02, A
                 MOV     A, 0x02
+                B0MOV   A, 0x01
         ''')
         bank_address = bank << 8
         sim.RBANK = bank
@@ -257,6 +258,20 @@ class SimSN8F2288Tests(unittest.TestCase):
                 },
             },
         )
+        sim.step() # B0MOV A, M
+        state7 = sim.getState()
+        self.assertEqual(state6['cycle_count'] + 1, state7['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state6, state7,
+            {
+                'A': 0x65,
+                'ram': {
+                    sim.addressOf('PFLAG'): 0x80, # Z cleared
+                    sim.addressOf('PCL'): 0x0b,
+                },
+            },
+        )
+
 
     def testMOV_BSET_BCLR(self):
         self._testMOV_BSET_BCLR(0)
