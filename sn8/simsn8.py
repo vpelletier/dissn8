@@ -1570,8 +1570,8 @@ class SN8(object):
         a = self.A
         value = a + immediate
         byte_value = value & 0xff
-        self.FC = value != byte_value
-        self.FDC = value & 0xf0 != a & 0xf0
+        self.FC = value > 0xff
+        self.FDC = (a & 0xf) + (immediate & 0xf) > 0xf
         self.FZ = byte_value == 0
         return byte_value
 
@@ -1610,8 +1610,8 @@ class SN8(object):
         a = self.A
         value = a - immediate
         byte_value = value & 0xff
-        self.FC = value == byte_value
-        self.FDC = value & 0xf0 == a & 0xf0
+        self.FC = value >= 0
+        self.FDC = (a & 0xf) - (immediate & 0xf) >= 0
         self.FZ = byte_value == 0
         #print "%#04x - %#+05x = %#+05x, masked: %#04x C=%i DC=%i Z=%i" % (a, immediate, value, byte_value, self.FC, self.FDC, self.FZ)
         return byte_value
