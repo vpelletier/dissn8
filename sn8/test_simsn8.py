@@ -447,8 +447,7 @@ class SimSN8F2288Tests(unittest.TestCase):
 
     def test_XCH(self):
         sim = self._getSimulator(u'''
-                MOV     A, #1
-                B0MOV   RBANK, A
+                B0MOV   RBANK, #1
                 MOV     A, #0x55
                 MOV     0x00, A
                 B0MOV   R, #0xff
@@ -460,14 +459,13 @@ class SimSN8F2288Tests(unittest.TestCase):
                 XCH     A, PCL
         ''')
         state0 = sim.getState()
-        sim.step() # MOV A, I
-        sim.step() # B0MOV M, A
+        sim.step() # B0MOV M, I
         sim.step() # MOV A, I
         sim.step() # MOV M, A
         sim.step() # B0MOV M, I
         sim.step() # MOV A, I
         state1 = sim.getState()
-        self.assertEqual(state0['cycle_count'] + 6, state1['cycle_count'])
+        self.assertEqual(state0['cycle_count'] + 5, state1['cycle_count'])
         self.assertStrippedDifferenceEqual(
             state0, state1,
             {
@@ -475,7 +473,7 @@ class SimSN8F2288Tests(unittest.TestCase):
                 'ram': {
                     sim.addressOf('R'): 0xff,
                     sim.addressOf('RBANK'): 0x01,
-                    sim.addressOf('PCL'): 0x06,
+                    sim.addressOf('PCL'): 0x05,
                     0x0100: 0x55,
                 },
             },
@@ -489,7 +487,7 @@ class SimSN8F2288Tests(unittest.TestCase):
                 'A': 0xff,
                 'ram': {
                     sim.addressOf('R'): 0x00,
-                    sim.addressOf('PCL'): 0x07,
+                    sim.addressOf('PCL'): 0x06,
                 },
             },
         )
@@ -499,22 +497,22 @@ class SimSN8F2288Tests(unittest.TestCase):
         self.assertStrippedDifferenceEqual(
             state2, state3,
             {
-                'A': 0x55, # Address after XCH, coming from PCL
+                'A': 0x55,
                 'ram': {
                     0x0100: 0xff,
-                    sim.addressOf('PCL'): 0x08,
+                    sim.addressOf('PCL'): 0x07,
                 },
             },
         )
-        sim.step() # MOV A, I
-        sim.step() # B0MOV M, A
+        sim.step() # NOP
+        sim.step() # B0MOV M, I
         sim.step() # XCH
         state4 = sim.getState()
         self.assertEqual(state3['cycle_count'] + 3, state4['cycle_count'])
         self.assertStrippedDifferenceEqual(
             state3, state4,
             {
-                'A': 0x0b, # Address after XCH, coming from PCL
+                'A': 0x0a, # Address after XCH, coming from PCL
                 'ram': {
                     sim.addressOf('RBANK'): 0x00,
                     sim.addressOf('PCL'): 0x00,
@@ -524,8 +522,7 @@ class SimSN8F2288Tests(unittest.TestCase):
 
     def test_SWAP(self):
         sim = self._getSimulator(u'''
-                MOV     A, #1
-                B0MOV   RBANK, A
+                B0MOV   RBANK, #1
                 MOV     A, #0xf0
                 MOV     0x00, A
                 SWAP    0x00
@@ -533,19 +530,18 @@ class SimSN8F2288Tests(unittest.TestCase):
                 SWAPM   0x00
         ''')
         state0 = sim.getState()
-        sim.step() # MOV A, I
-        sim.step() # B0MOV M, A
+        sim.step() # B0MOV M, I
         sim.step() # MOV A, I
         sim.step() # MOV M, A
         state1 = sim.getState()
-        self.assertEqual(state0['cycle_count'] + 4, state1['cycle_count'])
+        self.assertEqual(state0['cycle_count'] + 3, state1['cycle_count'])
         self.assertStrippedDifferenceEqual(
             state0, state1,
             {
                 'A': 0xf0,
                 'ram': {
                     sim.addressOf('RBANK'): 0x01,
-                    sim.addressOf('PCL'): 0x04,
+                    sim.addressOf('PCL'): 0x03,
                     0x0100: 0xf0,
                 },
             },
@@ -558,7 +554,7 @@ class SimSN8F2288Tests(unittest.TestCase):
             {
                 'A': 0x0f,
                 'ram': {
-                    sim.addressOf('PCL'): 0x05,
+                    sim.addressOf('PCL'): 0x04,
                 },
             },
         )
@@ -571,7 +567,7 @@ class SimSN8F2288Tests(unittest.TestCase):
             {
                 'A': 0x00,
                 'ram': {
-                    sim.addressOf('PCL'): 0x07,
+                    sim.addressOf('PCL'): 0x06,
                     0x0100: 0x0f,
                 },
             },
@@ -585,8 +581,7 @@ class SimSN8F2288Tests(unittest.TestCase):
         # - all 3 variants are exercised (AM, MA, AI)
         # - for AM and MA variants, result differs from both operands
         sim = self._getSimulator(u'''
-                MOV     A, #1
-                B0MOV   RBANK, A
+                B0MOV   RBANK, #1
                 MOV     A, #0x0f
                 MOV     0x00, A
                 B0B%(z0)s FZ
@@ -603,7 +598,7 @@ class SimSN8F2288Tests(unittest.TestCase):
             'z0': 'SET' if res0 else 'CLR',
             'z1': 'SET' if res1 else 'CLR',
         })
-        for _ in xrange(6):
+        for _ in xrange(5):
             sim.step()
         state_before = sim.getState()
         sim.step()
@@ -614,7 +609,7 @@ class SimSN8F2288Tests(unittest.TestCase):
             {
                 'A': res0,
                 'ram': {
-                    sim.addressOf('PCL'): 0x07,
+                    sim.addressOf('PCL'): 0x06,
                     sim.addressOf('PFLAG'): 0x80 | (0 if res0 else 1),
                 },
             },
@@ -629,7 +624,7 @@ class SimSN8F2288Tests(unittest.TestCase):
             state_before, state_after,
             {
                 'ram': {
-                    sim.addressOf('PCL'): 0x0a,
+                    sim.addressOf('PCL'): 0x09,
                     sim.addressOf('PFLAG'): 0x80 | (0 if res1 else 1),
                     0x100: res1,
                 },
@@ -645,7 +640,7 @@ class SimSN8F2288Tests(unittest.TestCase):
             state_before, state_after,
             {
                 'ram': {
-                    sim.addressOf('PCL'): 0x0d,
+                    sim.addressOf('PCL'): 0x0c,
                     sim.addressOf('PFLAG'): 0x81, # FZ set
                 },
             },
