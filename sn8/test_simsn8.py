@@ -743,5 +743,261 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def test_ADD_ADC_SUB_SBC(self):
+        sim = self._getSimulator(u'''
+                B0MOV   RBANK, #1
+                ; {ADD,SUB} A, I without carry but with nibble carry
+                MOV     A, #0xef
+                ADD     A, #0x01
+                SUB     A, #0x01
+                ; {ADD,SUB} A, I with carry but without nibble carry
+                MOV     A, #0xf0
+                ADD     A, #0x10
+                SUB     A, #0x10
+
+                MOV     A, #0x01
+                MOV     0x00, A
+                ; ADC A, M
+                B0MOV   PFLAG, #0x84
+                MOV     A, #0xfe
+                ADC     A, 0x00
+                ; ADC M, A
+                B0MOV   PFLAG, #0x84
+                MOV     A, #0xfe
+                ADC     0x00, A
+
+                MOV     A, #0x01
+                MOV     0x00, A
+                ; ADD A, M
+                B0MOV   PFLAG, #0x84
+                MOV     A, #0xfe
+                ADD     A, 0x00
+                ; ADD M, A
+                B0MOV   PFLAG, #0x84
+                MOV     A, #0xfe
+                ADD     0x00, A
+
+                MOV     A, #0x01
+                MOV     0x00, A
+                ; SBC A, M
+                B0MOV   PFLAG, #0x81
+                MOV     A, #0x00
+                SBC     A, 0x00
+                ; SBC M, A
+                B0MOV   PFLAG, #0x81
+                MOV     A, #0x00
+                SBC     0x00, A
+
+                MOV     A, #0x01
+                MOV     0x00, A
+                ; SUB A, M
+                B0MOV   PFLAG, #0x81
+                MOV     A, #0x00
+                SUB     A, 0x00
+                ; SUB M, A
+                B0MOV   PFLAG, #0x81
+                MOV     A, #0x00
+                SUB     0x00, A
+        ''')
+        sim.step() # B0MOV M, I
+
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # ADD A, I
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xf0,
+                'ram': {
+                    sim.addressOf('PCL'): 0x03,
+                    sim.addressOf('PFLAG'): 0x82, # FC clear, FDC set, FZ clear
+                },
+            },
+        )
+        sim.step() # SUB A, I
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 1, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'A': 0xef,
+                'ram': {
+                    sim.addressOf('PCL'): 0x04,
+                    sim.addressOf('PFLAG'): 0x84, # FC set, FDC clear, FZ clear
+                },
+            },
+        )
+
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # ADD A, I
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x00,
+                'ram': {
+                    sim.addressOf('PCL'): 0x06,
+                    sim.addressOf('PFLAG'): 0x85, # FC set, FDC clear, FZ set
+                },
+            },
+        )
+        sim.step() # SUB A, I
+        state2 = sim.getState()
+        self.assertEqual(state1['cycle_count'] + 1, state2['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state1, state2,
+            {
+                'A': 0xf0,
+                'ram': {
+                    sim.addressOf('PCL'): 0x07,
+                    sim.addressOf('PFLAG'): 0x82, # FC clear, FDC set, FZ clear
+                },
+            },
+        )
+
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # ADC A, M
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x00,
+                'ram': {
+                    sim.addressOf('PCL'): 0x0c,
+                    sim.addressOf('PFLAG'): 0x87, # FC set, FDC set, FZ set
+                },
+            },
+        )
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # ADC M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x0f,
+                    sim.addressOf('PFLAG'): 0x87, # FC set, FDC set, FZ set
+                    0x100: 0x00,
+                },
+            },
+        )
+
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # ADD M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xff,
+                'ram': {
+                    sim.addressOf('PCL'): 0x14,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FDC clear, FZ clear
+                },
+            },
+        )
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # ADD M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x17,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FDC clear, FZ clear
+                    0x100: 0xff,
+                },
+            },
+        )
+
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # SBC A, M
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xfe,
+                'ram': {
+                    sim.addressOf('PCL'): 0x01c,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FDC clear, FZ clear
+                },
+            },
+        )
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # SBC M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x1f,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FDC clear, FZ clear
+                    0x100: 0xfe,
+                },
+            },
+        )
+
+        sim.step() # MOV A, I
+        sim.step() # MOV M, A
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # SUB M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xff,
+                'ram': {
+                    sim.addressOf('PCL'): 0x24,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FDC clear, FZ clear
+                },
+            },
+        )
+        sim.step() # MOV M, I
+        sim.step() # MOV A, I
+        state0 = sim.getState()
+        sim.step() # SUB M, A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x27,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FDC clear, FZ clear
+                    0x100: 0xff,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
