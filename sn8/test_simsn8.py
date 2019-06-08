@@ -1018,5 +1018,377 @@ class SimSN8F2288Tests(unittest.TestCase):
             },
         )
 
+    def test_conditionals(self):
+        sim = self._getSimulator(u'''
+                B0MOV   RBANK, #1
+
+                MOV     A, #0x02    ; for CMPRS
+                MOV     0x02, A
+                MOV     A, #0x01
+                MOV     0x01, A
+                MOV     A, #0x00
+                MOV     0x00, A
+                MOV     A, #0xfe    ; for INCS/INCMS
+                MOV     0x03, A
+                MOV     A, #0xff
+                MOV     0x04, A
+                MOV     A, #0x02    ; for DECS/DECMS
+                MOV     0x05, A
+                MOV     A, #0x01
+                MOV     0x06, A
+                MOV     A, #0x02    ; for BTS0/BTS1
+                MOV     0x07, A
+                B0MOV   0x08, A
+
+                B0BSET  FZ
+                MOV     A, #0x01
+                CMPRS   A, #0x02
+                NOP
+                CMPRS   A, #0x01
+                JMP     $       ; it's a trap !
+                CMPRS   A, #0x00
+                NOP
+                CMPRS   A, 0x02
+                NOP
+                CMPRS   A, 0x01
+                JMP     $       ; it's a trap !
+                CMPRS   A, 0x00
+                NOP
+
+                INCS    0x03
+                NOP
+                INCS    0x04
+                JMP     $       ; it's a trap !
+                INCMS   0x03
+                NOP
+                INCMS   0x03
+                JMP     $       ; it's a trap !
+
+                DECS    0x05
+                NOP
+                DECS    0x06
+                JMP     $       ; it's a trap !
+                DECMS   0x05
+                NOP
+                DECMS   0x05
+                JMP     $       ; it's a trap !
+
+                BTS0    0x07.0
+                JMP     $       ; it's a trap !
+                BTS0    0x07.1
+                NOP
+                BTS1    0x07.0
+                NOP
+                BTS1    0x07.1
+                JMP     $       ; it's a trap !
+
+                B0BTS0  0x08.0
+                JMP     $       ; it's a trap !
+                B0BTS0  0x08.1
+                NOP
+                B0BTS1  0x08.0
+                NOP
+                B0BTS1  0x08.1
+                JMP     $       ; it's a trap !
+        ''')
+        for _ in xrange(20):
+            sim.step()
+
+        state0 = sim.getState()
+        sim.step() # CMPRS A, I
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x15,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FZ clear
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # CMPRS A, I
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x18,
+                    sim.addressOf('PFLAG'): 0x85, # FC set, FZ set
+                },
+            },
+        )
+        state0 = sim.getState()
+        sim.step() # CMPRS A, I
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x19,
+                    sim.addressOf('PFLAG'): 0x84, # FC set, FZ clear
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # CMPRS A, M
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x1b,
+                    sim.addressOf('PFLAG'): 0x80, # FC clear, FZ clear
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # CMPRS A, M
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x1e,
+                    sim.addressOf('PFLAG'): 0x85, # FC set, FZ set
+                },
+            },
+        )
+        state0 = sim.getState()
+        sim.step() # CMPRS A, M
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x1f,
+                    sim.addressOf('PFLAG'): 0x84, # FC set, FZ clear
+                },
+            },
+        )
+        sim.step() # NOP
+
+
+        state0 = sim.getState()
+        sim.step() # INCS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0xff,
+                'ram': {
+                    sim.addressOf('PCL'): 0x21,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # INCS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x00,
+                'ram': {
+                    sim.addressOf('PCL'): 0x24,
+                },
+            },
+        )
+        state0 = sim.getState()
+        sim.step() # INCMS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x25,
+                    0x103: 0xff,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # INCMS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 3, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x28,
+                    0x103: 0x00,
+                },
+            },
+        )
+
+        state0 = sim.getState()
+        sim.step() # DECS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x01,
+                'ram': {
+                    sim.addressOf('PCL'): 0x29,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # DECS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'A': 0x00,
+                'ram': {
+                    sim.addressOf('PCL'): 0x2c,
+                },
+            },
+        )
+        state0 = sim.getState()
+        sim.step() # DECMS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x2d,
+                    0x105: 0x01,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # DECMS A
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 3, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x30,
+                    0x105: 0x00,
+                },
+            },
+        )
+
+        state0 = sim.getState()
+        sim.step() # BTS0 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x32,
+                },
+            },
+        )
+        state0 = sim.getState()
+        sim.step() # BTS0 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x33,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # BTS1 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x35,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # BTS1 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x38,
+                },
+            },
+        )
+
+        state0 = sim.getState()
+        sim.step() # B0BTS0 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x3a,
+                },
+            },
+        )
+        state0 = sim.getState()
+        sim.step() # B0BTS0 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x3b,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # B0BTS1 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 1, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x3d,
+                },
+            },
+        )
+        sim.step() # NOP
+        state0 = sim.getState()
+        sim.step() # B0BTS1 M.b
+        state1 = sim.getState()
+        self.assertEqual(state0['cycle_count'] + 2, state1['cycle_count'])
+        self.assertStrippedDifferenceEqual(
+            state0, state1,
+            {
+                'ram': {
+                    sim.addressOf('PCL'): 0x40,
+                },
+            },
+        )
+
 if __name__ == '__main__':
     unittest.main()
