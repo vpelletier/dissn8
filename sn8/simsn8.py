@@ -1618,7 +1618,7 @@ class SN8(object):
 
     def subAM(self, address, carry=1):
         self.pc += 1
-        self.A = self._subIA(self.read(address) + carry - 1)
+        self.A = self._subIA(self.read(address) - carry + 1)
         self.tic()
 
     def subMA(self, address, carry=1):
@@ -1632,7 +1632,7 @@ class SN8(object):
         # XXX: vendor's simulator behaves strangely: "SUB PCL, A" jumps to
         # 0x2000, apparently whatever A and ORG are.
         self.pc += 1
-        self.write(address, self._subIA(self.read(address) + carry - 1))
+        self.write(address, self._subIA(self.read(address) - carry + 1))
         self.tic()
         if not 0x80 <= address < 0x100:
             self.tic()
