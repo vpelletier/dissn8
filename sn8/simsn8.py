@@ -1108,8 +1108,8 @@ class SN8(object):
             ','.join(
                 '%#06x' % (
                     (
-                        self.ram[self.addressOf('STK7H') + (7 - x) * 2] << 8
-                    ) | self.ram[self.addressOf('STK7L') + (7 - x) * 2]
+                        self.ram[self.addressOf('STK7H') + x * 2] << 8
+                    ) | self.ram[self.addressOf('STK7L') + x * 2]
                 )
                 for x in xrange(7, self.STKP & 0x7f, -1)
             ),
