@@ -733,7 +733,7 @@ def main():
     sleep(1)
     device.setHIDIdle(0, 1, 0)
     sleep(1)
-    hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1) # XXX: should parse config_descriptor
+    hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1, timeout=10) # XXX: should parse config_descriptor
     sleep(1)
     print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
     report_1_length = (
