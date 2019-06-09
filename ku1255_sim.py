@@ -671,6 +671,7 @@ def main():
     device.cpu.usb.reset = True
     sleep(10) # Reset lasts 10ms
     device.cpu.usb.reset = False
+    sleep(100) # Wait some more
     # Based on linux enumeration sequence
     device_descriptor = device.getDescriptor(1, 8)
     sleep(1)
