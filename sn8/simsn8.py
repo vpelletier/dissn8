@@ -789,7 +789,7 @@ class Watchdog(object):
 
     def tic(self): # Call on Fslow
         self.value += 1
-        if self.value & 0xfff == 0: # 12 bits counter
+        if self.value & 0x7ff == 0: # 11 bits counter
             warnings.warn('Watchdog triggered')
             self.cpu.reset(RESET_SOURCE_WATCHDOG)
 
@@ -1362,7 +1362,7 @@ class SN8(object):
             self.slow_clock += 1
             if self.slow_clock > self.slow_clock_threshold:
                 self.slow_tic()
-                self.slow_clock = 0
+                self.slow_clock -= self.slow_clock_threshold
         for device in device_list:
             device.tic()
 
