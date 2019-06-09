@@ -1304,8 +1304,16 @@ class SN8(object):
         code_options = self.flash[0x2fff]
         self.watchdog_enabled = code_options & 0x0f00 != 0b1010
         self.watchdog_always_on = code_options & 0x0f00 == 0
-        self.high_speed_cycle_duration_ms = (1 << ((code_options >> 6) & 3)) / 12000.
-        self.low_speed_cycle_duration_ms = (2 << ((code_options >> 8) & 1)) / 12.
+        self.high_speed_cycle_duration_ms = {
+            0x00: 1,
+            0x04: 2,
+            0x08: 4,
+            0x0c: 8,
+        }[code_options & 0x0c] / 12000.
+        self.low_speed_cycle_duration_ms = {
+            0x00: 2,
+            0x80: 4,
+        }[code_options & 0x80] / 12.
         self.slow_clock_threshold = (
             self.low_speed_cycle_duration_ms / self.high_speed_cycle_duration_ms
         )

@@ -703,7 +703,7 @@ def main():
     print 'config desc:', hexdump(config_descriptor)
     first_supported_language, = unpack('<H', device.getDescriptor(3, 255)[2:4])
     sleep(1)
-    print 'string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language)[2:].decode('utf-16')
+    print 'string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16')
     sleep(1)
     print 'string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16')
     sleep(1)
@@ -733,7 +733,7 @@ def main():
     sleep(1)
     device.setHIDIdle(0, 1, 0)
     sleep(1)
-    hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1, timeout=10) # XXX: should parse config_descriptor
+    hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1, timeout=15) # XXX: should parse config_descriptor
     sleep(1)
     print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
     report_1_length = (
