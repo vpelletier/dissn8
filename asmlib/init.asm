@@ -20,9 +20,7 @@
 .CODE
         MOV     A, #00000111b   ; As per datasheet §2.3.2
         B0MOV   STKP, A         ;
-
-
-
+        ; Identify reset source
         B0BTS0  FNT0
         JMP     @F
         B0BTS1  FNPD
@@ -32,4 +30,3 @@
         B0BTS1  FNPD
         JMP     power_on_reset  ; NT0 & /NPD
         JMP     external_reset  ; NT0 & NPD
-
