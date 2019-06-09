@@ -669,9 +669,7 @@ def main():
         raise Timeout('Not on USB bus')
     # Reset
     device.cpu.usb.reset = True
-    deadline = device.cpu.run_time + 10 # Reset lasts 10ms
-    while device.cpu.run_time < deadline:
-        device.step()
+    sleep(10) # Reset lasts 10ms
     device.cpu.usb.reset = False
     # Based on linux enumeration sequence
     device_descriptor = device.getDescriptor(1, 8)
