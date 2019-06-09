@@ -21,27 +21,29 @@
 ; - bit-level clock stretching
 ; - no arbitration
 ; - max stack depth: 3, including incomming call.
-; - alters R, Y, Z, FC
+; - alters A, R, FC
+; - bank-safe
 ;
 ; Input parameters:
 ; sda:     bank zero bit address of SDA signal
 ; sda_dir: bank zero bit address of SDA direction control (1=output, 0=input)
 ; scl:     bank zero bit address of SCL signal
 ; scl_dir: bank zero bit address of SCL direction control (1=output, 0=input)
-
-.DATA
-; constants
-_I2C_DELAY_4_0US    EQU   2 ; 4.0µs@3MHz = 12.0 cycles = 6 + 3 * 2
-_I2C_DELAY_4_7US    EQU   3 ; 4.7µs@3MHz = 14.1 cycles = 6 + 3 * 3 - 0.9
-_I2C_DELAY_5_0US    EQU   3 ; 5.0µs@3MHz = 15.0 cycles = 6 + 3 * 3
+; Main application is expected to initialise:
+; - sda and scl to 0
+; - sda_dir and scl_dir to input (0)
 
 .CODE
-_i2c_delay: ; modifies: Z
-            ; Fixed delay: CALL + RET + B0MOV + DECMS exit = 6 cycles
-            ; Variable delay: Z * (DECMS + JMP) = Z * 3 cycles
-        DECMS   Z
-        JMP     _i2c_delay
-        RET
+; Each JMP is 2 cycles. CALL and RET are also 2 cycles each.
+_i2c_delay_5_0: ; 5.0µs@3MHz = 15.0 cycles
+_i2c_delay_4_7: ; 4.7µs@3MHz = 14.1
+                JMP $+1
+_i2c_delay_4_0: ; 4.0µs@3MHz = 12.0 cycles
+                JMP $+1
+                JMP $+1
+                JMP $+1
+                JMP $+1
+                RET
 
 _i2c_wait_scl_high: ; modifies: (nil)
                     ; line state in: scl=- sda=-
@@ -52,121 +54,112 @@ _i2c_wait_scl_high: ; modifies: (nil)
         JMP     @B
         RET
 
-_i2c_clock_bit_in: ; modifies: Z
-                   ; line state in: scl=- sda=-
-                   ; line state out: scl=HZ sda=-
+_i2c_recv_r0:       ; modifies: A, R
+                    ; line state in: scl=- sda=HZ
+                    ; line state out: scl=0 sda=HZ
+        B0MOV   A, R
+        B0ADD   R, A
+        CALL    _i2c_delay_4_0        ; tLOW is 4.7µs, the difference was taken
+                                      ; by above B0MOV B0ADD instructions
+        B0BSET  R.0
         CALL    _i2c_wait_scl_high
-        B0MOV   Z, #_I2C_DELAY_4_0US  ; tHIGH
-        JMP     _i2c_delay ; CALL + RET
+        CALL    _i2c_delay_4_0  ; tHIGH
+        B0BTS1  sda
+        B0BCLR  R.0
+        B0BSET  scl_dir
+        RET
 
-_i2c_clock_bit_out: ; modifies: Z
+_i2c_send_r7:       ; modifies: A, R
                     ; line state in: scl=- sda=-
                     ; line state out: scl=0 sda=-
-        ; Same as _i2c_clock_bit_in ...
+        B0BCLR  sda_dir
+        B0BTS1  R.7
+        B0BSET  sda_dir
+        B0MOV   A, R
+        B0ADD   R, A
+        ; tSU;DAT is 0.75 cycles, CALL takes 2: no wait needed.
+        ; fall through
+_i2c_clock_bit_out: ; modifies: -
+                    ; line state in: scl=- sda=-
+                    ; line state out: scl=0 sda=-
         CALL    _i2c_wait_scl_high
-        B0MOV   Z, #_I2C_DELAY_4_0US  ; tHIGH
-        CALL    _i2c_delay
-        ; ... until here
+        CALL    _i2c_delay_4_0        ; tHIGH
         B0BSET  scl_dir
-        B0MOV   Z, #_I2C_DELAY_5_0US  ; tHD;DAT
-        JMP     _i2c_delay ; CALL + RET
+        JMP     _i2c_delay_5_0        ; tHD;DAT, CALL + RET
 
 ; Write 8 bits to bus. Returns whether device acked.
 i2c_write_byte: ; in: R
                 ; line state in: scl=0 sda=-
                 ; line state out: scl=0 sda=HZ
-                ; modifies: R, Y, Z
-                ; result: C (0=ack, 1=nack)
+                ; modifies: A, R
+                ; result: R.0 (0=ack, 1=nack)
         B0BSET  sda_dir
-        B0MOV   Y, #8                 ; 8 bits to go
-@@:
-        RLCM    R
+        CALL    _i2c_send_r7          ; bit 7
+        CALL    _i2c_send_r7          ; bit 6
+        CALL    _i2c_send_r7          ; bit 5
+        CALL    _i2c_send_r7          ; bit 4
+        CALL    _i2c_send_r7          ; bit 3
+        CALL    _i2c_send_r7          ; bit 2
+        CALL    _i2c_send_r7          ; bit 1
+        CALL    _i2c_send_r7          ; bit 0
         B0BCLR  sda_dir
-        B0BTS1  FC
-        B0BSET  sda_dir
-        ; tSU;DAT is 0.75 cycles, CALL takes 2: no wait needed.
-        CALL    _i2c_clock_bit_out
-        DECMS   Y
-        JMP     @B
-        B0BCLR  sda_dir
-        B0MOV   Z, #_I2C_DELAY_4_0US  ; >tVD;ACK
-        CALL    _i2c_delay
-        B0BSET  FC
-        CALL    _i2c_clock_bit_in
-        B0BTS1  sda
-        B0BCLR  FC
-        B0BSET  scl_dir
+        ; _i2c_recv_r0 starts with tLOW, which is >tVD;ACK
+        CALL    _i2c_recv_r0
         RET
 
 ; Read 8 bits from bus. Does not ack/nack.
 i2c_read_byte: ; line state in: scl=0 sda=-
                ; line state out: scl=0 sda=HZ
-               ; modifies: Y, Z
+               ; modifies: A, R
                ; result: R
         B0BCLR  sda_dir
-        B0MOV   Y, #8                 ; 8 bits to go
-@@:
-        B0MOV   Z, #_I2C_DELAY_4_7US  ; tLOW
-        CALL    _i2c_delay
-        B0BSET  FC
-        CALL    _i2c_clock_bit_in
-        B0BTS1  sda
-        B0BCLR  FC
-        RLCM    R
-        B0BSET  scl_dir
-        DECMS   Y
-        JMP     @B
+        CALL    _i2c_recv_r0          ; bit 7
+        CALL    _i2c_recv_r0          ; bit 6
+        CALL    _i2c_recv_r0          ; bit 5
+        CALL    _i2c_recv_r0          ; bit 4
+        CALL    _i2c_recv_r0          ; bit 3
+        CALL    _i2c_recv_r0          ; bit 2
+        CALL    _i2c_recv_r0          ; bit 1
+        CALL    _i2c_recv_r0          ; bit 0
         RET
-
-; Initialise bus direction & pin value
-i2c_init:
-        B0BCLR  sda_dir
-        B0BCLR  sda
-        B0BCLR  scl_dir
-        B0BCLR  scl
 
 ; Ack read byte
 i2c_ack: ; line state in: scl=0, sda=-
          ; line state out: scl=0, sda=0
-         ; modifies: Z
+         ; modifies: -
         B0BSET  sda_dir
         JMP     _i2c_clock_bit_out ; CALL + RET
 
 ; Nak read byte
 i2c_nak: ; line state in: scl=0, sda=-
          ; line state out: scl=0, sda=HZ
-         ; modifies: Z
+         ; modifies: -
         B0BCLR  sda_dir
         JMP     _i2c_clock_bit_out ; CALL + RET
 
 ; (Re)Start condition
 i2c_start: ; line state in: scl=-, sda=HZ
            ; line state out: scl=0, sda=0
-           ; modifies: Z
-        B0BCLR  scl_dir
-        B0BTS0  scl
+           ; modifies: -
+        B0BTS1  scl_dir
         JMP     @F                    ; start
+        B0BCLR  scl_dir
         CALL    _i2c_wait_scl_high    ; restart
-        B0MOV   Z, #_I2C_DELAY_4_7US  ; tSU;STA
-        CALL    _i2c_delay
+        CALL    _i2c_delay_4_7        ; tSU;STA
 @@:
         B0BSET  sda_dir
-        B0MOV   Z, #_I2C_DELAY_4_0US  ; tHD;STA
-        CALL    _i2c_delay
+        CALL    _i2c_delay_4_0        ; tHD;STA
         B0BSET  scl_dir
         RET
 
 ; Stop condition
 i2c_stop: ; line state in: scl=0, sda=-
           ; line state out: scl=HZ, sda=HZ
-          ; modifies: Z
+          ; modifies: -
         B0BSET  sda_dir
-        B0MOV   Z, #_I2C_DELAY_5_0US  ; tHD;DAT ?
-        CALL    _i2c_delay
+        CALL    _i2c_delay_5_0        ; tHD;DAT ?
         CALL    _i2c_wait_scl_high
-        B0MOV   Z, #_I2C_DELAY_4_0US  ; tSU;STO
-        CALL    _i2c_delay
+        CALL    _i2c_delay_4_0        ; tSU;STO
         B0BCLR  sda_dir
-;        B0MOV   Z, #_I2C_DELAY_4_7US  ; tBUF
-;        CALL    _i2c_delay
+;        CALL    _i2c_delay_4_7        ; tBUF
         RET
