@@ -20,7 +20,7 @@ from collections import defaultdict
 from functools import partial
 from struct import unpack
 import warnings
-from simsn8 import SN8F2288, INF, EndpointStall, EndpointNAK, RESET_SOURCE_LOW_VOLTAGE
+from sn8.simsn8 import SN8F2288, INF, EndpointStall, EndpointNAK, RESET_SOURCE_LOW_VOLTAGE
 
 try:
     _ = ord(b'\x00'[0])
