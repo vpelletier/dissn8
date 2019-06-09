@@ -71,19 +71,18 @@ def diff(a, b):
 
 class SimSN8F2288TestBase(unittest.TestCase):
     @staticmethod
-    def _getSimulator(source, watchdog=False):
+    def _getSimulator(source, watchdog=u'Disable', include=None):
         return simsn8.SN8F2288(BytesIO(assemble(
             # Boilerplate stuff.
             u'CHIP SN8F2288\n'
             u'//{{SONIX_CODE_OPTION\n'
-            u'    .Code_Option Watch_Dog "' + (
-                u'Enable' if watchdog else u'Disable'
-            ) + u'"\n'
+            u'    .Code_Option Watch_Dog "' + watchdog + u'"\n'
             u'    .Code_Option LVD "LVD_M"\n'
             u'//}}SONIX_CODE_OPTION\n'
             u'.CODE\n'
             u'ORG 0\n' +
-            source + '\n'
+            source + '\n',
+            include=include,
         )))
 
     @staticmethod
