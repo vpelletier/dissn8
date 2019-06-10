@@ -344,7 +344,6 @@ class USB(object):
         cpu.FUE0M0 = 0
         cpu.FUE0M1 = 0
         cpu.FEP0SETUP = 1
-        #print 'USB interrupt: FEP0SETUP'
         self._interrupt()
 
     def _checkEndpoint(self, endpoint):
@@ -395,7 +394,6 @@ class USB(object):
                     cpu.FEP3_NAK = 1
                 elif endpoint == 4:
                     cpu.FEP4_NAK = 1
-                #print 'USB interrupt: FEP%i_NAK' % endpoint
                 self._interrupt()
             raise EndpointNAK
         if has_pending_events:
@@ -422,9 +420,7 @@ class USB(object):
         length = len(data)
         if length > stop - start:
             raise ValueError('Data too long for endpoint buffer')
-        #print 'writing', length, 'bytes'
         for index, value in enumerate(data, start):
-            #print 'writing', index, hex(byte_ord(value))
             self.epbuf[index] = byte_ord(value)
         if endpoint == 0:
             cpu.FUE0M0 = 0
@@ -446,7 +442,6 @@ class USB(object):
             cpu.FUE4M0 = 0
             cpu.UE4R_C = length
             cpu.FEP4_ACK = 1
-        #print 'USB interrupt: send(%i) ACK' % endpoint
         self._interrupt()
 
     def recv(self, endpoint):
@@ -487,7 +482,6 @@ class USB(object):
         elif endpoint == 4:
             cpu.FUE4M0 = 0
             cpu.FEP4_ACK = 1
-        #print 'USB interrupt: recv(%i) ACK' % endpoint
         self._interrupt()
         return result
 
@@ -527,7 +521,6 @@ class USB(object):
     def FSOF(self, value):
         if value:
             self.status |= 0x20
-            #print 'USB interrupt: SOF'
             self._interrupt()
         else:
             self.status &= 0xdf
@@ -540,7 +533,6 @@ class USB(object):
     def FBUS_RST(self, value):
         if value:
             self.status |= 0x10
-            #print 'USB interrupt: BUS_RST'
             self._interrupt()
         else:
             self.status &= 0xef
@@ -553,7 +545,6 @@ class USB(object):
     def FSUSPEND(self, value):
         if value:
             self.status |= 0x08
-            #print 'USB interrupt: SUSPEND'
             self._interrupt()
         else:
             self.status &= 0xf7
@@ -1439,10 +1430,6 @@ class SN8(object):
             self.FGIE = False
             # XXX: assuming interrupt has 2-cycle duration, like a normal call
             self._call(0x0008) # TODO: symbolic name from config file
-        #else:
-        #    print 'Lost interrupt'
-        #    import traceback
-        #    traceback.print_stack()
 
     def reti(self):
         # XXX: assuming interrupts are re-enabled before jumping back (so tics
@@ -1622,7 +1609,6 @@ class SN8(object):
         self.FC = value >= 0
         self.FDC = (a & 0xf) - (immediate & 0xf) >= 0
         self.FZ = byte_value == 0
-        #print "%#04x - %#+05x = %#+05x, masked: %#04x C=%i DC=%i Z=%i" % (a, immediate, value, byte_value, self.FC, self.FDC, self.FZ)
         return byte_value
 
     def subAM(self, address, carry=1):
