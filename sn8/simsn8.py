@@ -1078,7 +1078,7 @@ class SN8(object):
         return getattr(self.__class__, name).address
 
     def __repr__(self):
-        return '<%s@%08x run_time=%6ims cycle_count=%9i A=%#04x R=%#04x Y=%#04x Z=%#04x PC=%#06x FC=%i FZ=%i RBANK=%02i watchdog=%#08x%s instr=%-20s stack=%s>' % (
+        return '<%s@%08x run_time=%8.3fms cycle_count=%9i A=%#04x R=%#04x Y=%#04x Z=%#04x PC=%#06x FC=%i FZ=%i RBANK=%02i watchdog=%#08x%s instr=%-20s stack=%s>' % (
             self.__class__.__name__,
             id(self),
             self.run_time,
