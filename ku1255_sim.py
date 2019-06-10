@@ -21,6 +21,7 @@ from functools import partial
 from struct import unpack
 import warnings
 from sn8.simsn8 import SN8F2288, INF, EndpointStall, EndpointNAK, RESET_SOURCE_LOW_VOLTAGE
+from sn8.libsimsn8 import BitBanging8bitsI2C
 
 try:
     _ = ord(b'\x00'[0])
@@ -33,10 +34,6 @@ else:
 def hexdump(value):
     return ' '.join('%02x' % byte_ord(x) for x in value)
 
-I2C_IDLE = 0
-I2C_ADDRESS = 1
-I2C_DATA = 2
-I2C_IGNORE = 3
 MOUSE_IDLE = 0
 MOUSE_INIT1 = 1
 MOUSE_INITIALISED = 2
@@ -77,12 +74,16 @@ class KU1255(object):
         usb.on_enable_change = self.onUSBEnableChange
         usb.on_ep_enable_change = self.onUSBEPEnableChange
         # Bit-banging I2C device emulation (mouse)
+        self._i2c_mouse = BitBanging8bitsI2C(
+            address=0x2a,
+            onAddressed=self._onI2CAddressed,
+            onDataByteReceived=self._onI2CDataByteReceived,
+            getNextDataByte=self._getNextI2CDataByte,
+        )
         cpu.p2.setLoad(4, self.getI2CSCLLoad)
         cpu.p2.setLoad(5, self.getI2CSDALoad)
         cpu.p2.setLoad(6, self.getMouseATTNLoad)
         self.scl_pull_up = self.sda_pull_up = self.mouse_attn_pull_up = 3300 # 3.3k Ohms
-        self.i2c_read_address = 0x55
-        self.i2c_write_address = 0x54
         self._trace = False
         self._reset()
 
@@ -152,11 +153,8 @@ class KU1255(object):
         self.usb_is_endpoint_enabled = [True, False, False, False, False]
         self.usb_is_wakeup_requested = False
         # I2C
-        self.scl_float = True
-        self.sda_float = True
         self.mouse_attn_float = True
         self.mouse_initialisation_state = MOUSE_IDLE
-        self.i2c_state = I2C_IDLE
         self.i2c_buffer = [
             0x80, # Value known, meaning unknown
             0x00, # Buttons
@@ -166,12 +164,7 @@ class KU1255(object):
         ]
         self.i2c_buffer_index = 0
         self.i2c_in_buffer = []
-        self.i2c_previous_sda = 1
-        self.i2c_previous_scl = 1
-        self.i2c_current_byte = 0x00
-        self.i2c_bit_count = 0
-        self.i2c_sending_next = False
-        self.i2c_sending = False
+        self._i2c_mouse.reset()
 
     def step(self):
         cpu = self.cpu
@@ -180,125 +173,45 @@ class KU1255(object):
         cpu.step()
         # Assume CPU agrees with device on bus state
         p2 = cpu.p2.read()
-        scl = (p2 >> 4) & 1
-        sda = (p2 >> 5) & 1
-        scl_changed = self.i2c_previous_scl != scl
-        sda_changed = self.i2c_previous_sda != sda
-        if scl_changed and sda_changed:
-            raise ValueError('SCL and SDA changed during same step')
-        if scl_changed:
-            self.i2c_previous_scl = scl
-            if self.i2c_state != I2C_IGNORE:
-                if scl:
-                    #print '%10.3fms SCL rising  edge sda=%i bit_count=%i byte=%#04x' % (self.cpu.run_time, sda, self.i2c_bit_count, self.i2c_current_byte)
-                    # Rising clock edge
-                    if self.i2c_bit_count < 8:
-                        if not self.i2c_sending:
-                            # Data bit
-                            self.i2c_current_byte = ((self.i2c_current_byte << 1) | sda) & 0xff
-                    else:
-                        assert self.i2c_bit_count == 8, self.i2c_bit_count
-                        # ack/nack bit
-                        if self.i2c_sending:
-                            if sda:
-                                #print 'CPU NACK'
-                                self.i2c_state = I2C_IGNORE
-                            #else:
-                            #    print 'CPU ACK'
-                else:
-                    #print '%10.3fms SCL falling edge sda=%i bit_count=%i byte=%#04x' % (self.cpu.run_time, sda, self.i2c_bit_count, self.i2c_current_byte)
-                    # Falling clock edge
-                    if self.i2c_bit_count < 7:
-                        if self.i2c_sending:
-                            self.sda_float = bool(self.i2c_current_byte & 0x80)
-                            #print 'Sending bit %i, sda_float=%i' % (self.i2c_bit_count, self.sda_float)
-                            self.i2c_current_byte = (self.i2c_current_byte << 1) & 0xff
-                        self.i2c_bit_count += 1
-                    elif self.i2c_bit_count == 7:
-                        if self.i2c_sending:
-                            # Release SDA so CPU may NAK
-                            self.sda_float = True
-                        else:
-                            self.i2c_onByteReceived()
-                            self.i2c_current_byte = 0x00
-                        self.i2c_bit_count += 1
-                    else:
-                        assert self.i2c_bit_count == 8, self.i2c_bit_count
-                        # Ack bit time finished
-                        self.i2c_bit_count = 0
-                        self.i2c_sending = self.i2c_sending_next
-                        if self.i2c_sending:
-                            # Prepare first bit of next byte
-                            try:
-                                self.i2c_current_byte = self.i2c_buffer[self.i2c_buffer_index]
-                            except IndexError:
-                                # Master reads more than is available.
-                                self.i2c_state = I2C_IGNORE
-                            else:
-                                self.i2c_buffer_index += 1
-                                if self.i2c_buffer_index > 3:
-                                    # CPU has received buttons, x and y.
-                                    # No need for further attention.
-                                    self.mouse_attn_float = True
-                                #print 'Sending %#04x' % self.i2c_current_byte
-                                self.sda_float = bool(self.i2c_current_byte & 0x80)
-                                #print 'Sending bit %i, sda_float=%i' % (self.i2c_bit_count, self.sda_float)
-                                self.i2c_current_byte = (self.i2c_current_byte << 1) & 0xff
-                        else:
-                            if not self.sda_float:
-                                #print 'Releasing SDA'
-                                self.sda_float = True
-        if sda_changed:
-            self.i2c_previous_sda = sda
-            if scl:
-                if sda:
-                    #print '%10.3fms stop condition' % (self.cpu.run_time, )
-                    self.i2c_state = I2C_IDLE
-                else:
-                    #print '%10.3fms start condition' % (self.cpu.run_time, )
-                    self.i2c_state = I2C_ADDRESS
-                # Stop/start/restart condition
-                self.i2c_bit_count = -1
-                self.i2c_sending = False
-                self.i2c_sending_next = False
+        self._i2c_mouse.step(p2 & 0x10, p2 & 0x20)
 
-    def i2c_onByteReceived(self):
-        if self.i2c_state == I2C_ADDRESS:
-            if self.i2c_current_byte == self.i2c_read_address:
-                #print 'Received read address, asserting SDA'
-                self.sda_float = False # ACK
-                self.i2c_sending_next = True
-                self.i2c_buffer_index = 0
-                self.i2c_state = I2C_DATA
-            elif self.i2c_current_byte == self.i2c_write_address:
-                #print 'Received write address, asserting SDA'
-                self.sda_float = False # ACK
-                self.i2c_in_buffer = []
-                self.i2c_state = I2C_DATA
-            else:
-                #print 'Received another address, ignoring until next stop condition'
-                self.i2c_state = I2C_IGNORE
-        elif self.i2c_state == I2C_DATA:
-            #print 'Received data byte %#04x' % self.i2c_current_byte
-            self.i2c_in_buffer.append(self.i2c_current_byte)
-            if self.i2c_in_buffer == [0xfc]:
-                self.mouse_initialisation_state = MOUSE_INIT1
-                #print 'Received mouse init 0 byte, asserting SDA'
-                self.sda_float = False # ACK
-            elif self.i2c_in_buffer == [0xc4]:
-                self.mouse_initialisation_state = MOUSE_INITIALISED
-                #print 'Received mouse init 1 byte, asserting SDA'
-                self.sda_float = False # ACK
-            else:
-                warnings.warn(
-                    'Mouse received unknown byte sequence received from '
-                    'cpu: %s' % ','.join(
-                        '%#03x' % x for x in self.i2c_in_buffer
-                    ),
-                )
-                # Left SDA float: NAK
+    def _onI2CAddressed(self, read):
+        if read:
+            self.i2c_buffer_index = 0
         else:
-            raise ValueError('i2c_onByteReceived should not be called in state %r' % self.i2c_state)
+            self.i2c_in_buffer = []
+        return True
+
+    def _onI2CDataByteReceived(self, data_byte):
+        #print 'Received data byte %#04x' % data_byte
+        self.i2c_in_buffer.append(data_byte)
+        if self.i2c_in_buffer == [0xfc]:
+            self.mouse_initialisation_state = MOUSE_INIT1
+            return True
+        if self.i2c_in_buffer == [0xc4]:
+            self.mouse_initialisation_state = MOUSE_INITIALISED
+            #self.mouse_attn_float = False
+            return True
+        warnings.warn(
+            'Mouse received unknown byte sequence received from '
+            'cpu: %s' % ','.join(
+                '%#03x' % x for x in self.i2c_in_buffer
+            ),
+        )
+        return False
+
+    def _getNextI2CDataByte(self):
+        # Prepare first bit of next byte
+        try:
+            result = self.i2c_buffer[self.i2c_buffer_index]
+        except IndexError:
+            return None
+        self.i2c_buffer_index += 1
+        if self.i2c_buffer_index > 3:
+            # CPU has received buttons, x and y.
+            # No need for further attention.
+            self.mouse_attn_float = True
+        return result
 
     def getKeyLoad(self, column):
         previous_column_count = 0
@@ -348,12 +261,12 @@ class KU1255(object):
         return voltage, impedance
 
     def getI2CSCLLoad(self):
-        if self.scl_float:
+        if self._i2c_mouse.scl_float:
             return self.cpu.p1.vdd, self.scl_pull_up
         return 0, 0 # Assume perfect short circuit to ground
 
     def getI2CSDALoad(self):
-        if self.sda_float:
+        if self._i2c_mouse.sda_float:
             return self.cpu.p1.vdd, self.sda_pull_up
         return 0, 0 # Assume perfect short circuit to ground
 
