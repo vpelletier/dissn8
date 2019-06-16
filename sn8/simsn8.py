@@ -1119,6 +1119,10 @@ class SN8(object):
         self.PCH = (value >> 8) & 0xff
 
     def step(self):
+        if self.OSCM & 0x18:
+            # CPU is halted in green & sleep modes
+            self.tic()
+            return
         pc = self.pc
         if pc in self.breakpoint_set:
             print 'bp %#06x %r' % (pc, self)
