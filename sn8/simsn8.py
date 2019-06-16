@@ -1374,11 +1374,6 @@ class SN8(object):
         elif fcpum1_0 == 0x10:
             # Wake from green: return to previous mode
             self.OSCM = oscm & ~0x18
-            self.run_time += 16384 * (
-                self.low_speed_cycle_duration_ms
-                if oscm & 0x04 else
-                self.high_speed_cycle_duration_ms
-            ) + self.oscillator_wakeup_time
         # else, ignore
 
     def bankify(self, address):
