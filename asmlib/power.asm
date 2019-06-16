@@ -17,11 +17,10 @@
 ; Power control functions
 ; - Fslow = Flosc / 2 (slower than necessary otherwise, but functional)
 ; - max stack depth: 1, including incomming call
-; - alters R
 
 .CODE
 ; Stop all clocks and all timers. Returns to normal mode on wake-up.
-; Wake-up sources: P0, P1, USB bus, reset
+; Wake-up sources: P0, P1, reset
 power_sleep: ; entry: normal or slow mode.
              ; exit: normal mode.
              ; modifies: (nil)
@@ -29,7 +28,7 @@ power_sleep: ; entry: normal or slow mode.
         RET             ; XXX: likely unreachable when woken by reset
 
 ; Stop CPU. Returns to previous mode on wake-up.
-; Wake-up soures: P0, P1, USB bus, reset, T0
+; Wake-up soures: P0, P1, reset, T0
 power_green: ; entry: normal or slow mode
              ; exit: same as entry
              ; modifies (nil)
@@ -51,14 +50,15 @@ power_normal: ; in: (nil)
               ; entry: slow mode
               ; exit: normal mode, if fast clock was not running it is started
               ;       and stabilised
-              ; modifies: Z if fast clock was stopped
+              ; modifies: R if fast clock was stopped, in which case this must
+              ;           be called with RBANK=0
         B0BTS1  FSTPHX
         JMP     _fast_clock_running
         B0BCLR  FSTPHX
         ; sleep for 3 + 19 * 3 cycles, 10ms at Flosc/2 and 20ms at Flosc/4
         B0MOV   R, #19
-        JMP     $+1
 @@:
+        JMP     $+1
         DECMS   R
         JMP     @B
 _fast_clock_running:

@@ -268,5 +268,54 @@ class ASMLibTests(SimSN8F2288TestBase):
                     last_clock_falling_time = time
                 self.assertGreaterEqual(duration, MIN_CLOCK_PERIOD)
 
+    def test_power(self):
+        sim = self._getSimulator(u'''
+        B0BCLR  FC          ; Keep xtal running
+        MOV     A, #0
+        CALL    power_slow
+        B0MOV   0x00, A
+        NOP                 ; Mesure slow cycle duration
+        CALL    power_normal
+        B0MOV   0x01, A
+        NOP                 ; Mesure fast cycle duration
+        ; setup T0 for wakeup
+        MOV     A, #0xf0
+        B0MOV   T0C, A      ; overflow in 16
+        B0MOV   T0M, A      ; enable, fCPU/2
+        CALL    power_green
+        B0MOV   0x02, A
+        INCLUDE "power.asm"
+        ''')
+        FAST_CYCLE_DURATION = 1./12000 # in ms
+        SLOW_CYCLE_DURATION = 2./12    # in ms
+        assert sim.ram[0] is None
+        while sim.ram[0] is None:
+            sim.step()
+        before_time = sim.run_time
+        sim.step() # NOP
+        self.assertAlmostEqual(sim.run_time - before_time, SLOW_CYCLE_DURATION)
+        assert sim.ram[1] is None
+        while sim.ram[1] is None:
+            sim.step()
+        before_time = sim.run_time
+        sim.step() # NOP
+        self.assertAlmostEqual(sim.run_time - before_time, FAST_CYCLE_DURATION)
+        sim.step() # MOV A,I
+        sim.step() # B0MOV M, A
+        sim.step() # B0MOV M, A
+        # From here, T0 is ticking, and will take at most 32 instructions to
+        # wake system up
+        deadline = sim.run_time + FAST_CYCLE_DURATION * 16
+        OSCM_ADDR = sim.addressOf('OSCM')
+        assert sim.ram[OSCM_ADDR] & 0x10 == 0x00
+        while sim.ram[OSCM_ADDR] & 0x10 == 0x00 and sim.run_time < deadline:
+            sim.step()
+        self.assertEqual(sim.ram[OSCM_ADDR] & 0x10, 0x10)
+        assert sim.ram[2] is None
+        while sim.ram[2] is None and sim.run_time < deadline:
+            sim.step()
+        self.assertEqual(sim.ram[OSCM_ADDR] & 0x10, 0x00)
+        self.assertLess(sim.run_time, deadline)
+
 if __name__ == '__main__':
     unittest.main()
