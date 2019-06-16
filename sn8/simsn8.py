@@ -1339,20 +1339,26 @@ class SN8(object):
         oscm = self.OSCM
         fcpum1_0 = oscm & 0x18
         if fcpum1_0 == 0x08:
+            # sleep
             raise CPUHalted('CPU in sleep mode')
         elif fcpum1_0 == 0x10:
+            # green mode
             # XXX: T1 is documented as having wake ability, but is disabled in green & sleep modes.
             # XXX: TC2 is not documented as enabled in any power mode, assuming same as TC0 & TC1.
             device_list = (self.t0, )
         else:
+            # normal mode (fast or slow clock)
             device_list = (self.t0, self.t1, self.tc0, self.tc1, self.tc2)
             self.cycle_count += 1
+            # USB runs only in fast mode
             if not (oscm & 0x04):
                 device_list += (self.usb, )
         if oscm & 0x04:
+            # Slow clock source
             self.run_time += self.low_speed_cycle_duration_ms
             self.slow_tic()
         else:
+            # Fast clock source
             self.run_time += self.high_speed_cycle_duration_ms
             self.slow_clock += 1
             if self.slow_clock > self.slow_clock_threshold:
