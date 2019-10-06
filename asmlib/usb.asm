@@ -78,7 +78,7 @@ usb_init: ; modifies: A
         B0MOV     usb_setup_data_len_h, A
         RET
 
-; Call when there may be USB events to handle.
+; Call to handle one USB EP0 or bus event.
 usb_handle: ; modifies: A, R, Y, Z
         B0BTS0    FEP0OUT
         JMP       _handle_ep0_out
