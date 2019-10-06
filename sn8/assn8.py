@@ -879,7 +879,11 @@ def main():
     )
     args = parser.parse_args()
     with args.input as infile:
-        assembler = Assembler(infile, debug=args.debug, include=sum(args.include, []))
+        assembler = Assembler(
+            infile,
+            debug=args.debug,
+            include=sum(args.include, []),
+        )
     with args.output as outfile:
         write = outfile.write
         for address in xrange(0x3000):
