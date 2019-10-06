@@ -24,6 +24,11 @@
 ;   - usb_set_configuration
 ;   - usb_get_interface
 ;   - usb_set_interface
+;   - usb_on_suspend
+;   - usb_on_reset
+;   - usb_on_sof
+;   - usb_on_pkt_err
+;   - usb_on_crc_err
 ; - tries to stick to standard compliance
 ; - tries to not rely on host behaving in a strictly standard manner
 ;   - does rely on host following proper transaction sequence (one OUT & IN max
