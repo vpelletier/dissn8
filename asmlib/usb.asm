@@ -29,6 +29,19 @@
 ;   - usb_on_sof
 ;   - usb_on_pkt_err
 ;   - usb_on_crc_err
+;   - usb_on_setupdata
+;     Called when host initiated a non-standard SETUP request
+;     (bmRequestType & 0x60 != 0).
+;     Expected to jump to usb_deferred_stall_ep0 if the request cannot be
+;     handled, or return otherwise.
+;   - usb_on_ep0_out
+;     Called for the OUT data stage of a non-standard SETUP request.
+;     In the data stage, expected to jump to usb_deferred_stall_ep0 if the
+;     data cannot be handled, or return otherwise.
+;     In the status stage, expected to jump to usb_stall_ep0 if the request
+;     cannot be handled, or to usb_ack_ep0 otherwise.
+;   - usb_on_ep0_in
+;     Similar to usb_on_ep0_out, but for the IN data stage.
 ; - tries to stick to standard compliance
 ; - tries to not rely on host behaving in a strictly standard manner
 ;   - does rely on host following proper transaction sequence (one OUT & IN max
