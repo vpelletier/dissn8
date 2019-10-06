@@ -685,11 +685,8 @@ _handle_get_interface:
         B0MOV     A, _active_configuration
         B0BTS0    FZ
         JMP       usb_deferred_stall_ep0        ; GET_INTERFACE on unconfigured device
-        MOV       A, #_wIndexL
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
         ; ABI:
-        ; in: A contains wIndexL
+        ; in: (nil)
         ; out: FC set to STALL
         ;      otherwise, R contains the answer
         CALL      usb_get_interface
