@@ -548,21 +548,28 @@ class Assembler(object):
     @staticmethod
     def p_data_list_many(production):
         '''
-        data_list : data_list ',' NUMBER
+        data_list : data_list ',' data_item
         '''
-        production[0] = production[1] + (production[3], )
+        production[0] = production[1] + production[3]
 
     @staticmethod
     def p_data_list_one(production):
         '''
-        data_list : NUMBER
+        data_list : data_item
+        '''
+        production[0] = production[1]
+
+    @staticmethod
+    def p_data_item_number(production):
+        '''
+        data_item : NUMBER
         '''
         production[0] = (production[1], )
 
     @staticmethod
-    def p_data_list_string(production):
+    def p_data_item_string(production):
         '''
-        data_list : STRING
+        data_item : STRING
         '''
         production[0] = tuple(ord(x) for x in production[1])
 
