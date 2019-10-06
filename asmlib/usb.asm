@@ -18,7 +18,9 @@
 ; Inspired from fx2lib.
 ; - max stack depth: 2, including incomming call and calls to functions
 ;   expected from main firmware:
-;   - usb_get_descriptor_address_and_length
+;   - usb_get_device_descriptor_address_and_length
+;   - usb_get_configuration_descriptor_address_and_length
+;   - usb_get_string_descriptor_address_and_length
 ;   - usb_set_configuration
 ;   - usb_get_interface
 ;   - usb_set_interface
@@ -504,17 +506,76 @@ _handle_get_descriptor:
         B0MOV     A, UDR0_R
         CMPRS     A, #0x80
         JMP       usb_deferred_stall_ep0
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        CMPRS     A, #3
+        JMP       @F
+        JMP       _usb_get_string_descriptor
+@@:
+        B0MOV     R, A
+        ; Not a string descriptor, wIndex must be zero
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0BTS0    FZ
+        JMP       usb_deferred_stall_ep0
+        B0MOV     A, #UDPR0_ADDRESS_W_INDEX_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0BTS0    FZ
+        JMP       usb_deferred_stall_ep0
+        B0MOV     A, R
+        CMPRS     A, #2
+        JMP       @F
+        JMP       _get_configuration_descriptor
+@@:
+        ; Not a configuration descriptor, wValueL must be zero
+        B0MOV     A, #UDPR0_ADDRESS_W_VALUE_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0BTS0    FZ
+        JMP       usb_deferred_stall_ep0
+        B0MOV     A, R
+        CMPRS     A, #1
+        JMP       usb_deferred_stall_ep0
+        B0BSET    FC
         ; ABI:
-        ; in: (nil - read wValue & wIndex from UDP0/UDR0_R)
+        ; in: (nil)
+        ; out: (see usb_get_string_descriptor_address_and_length)
+        CALL      usb_get_device_descriptor_address_and_length
+        JMP       _handle_get_descriptor_respond
+_get_configuration_descriptor:
+        B0MOV     A, #UDPR0_ADDRESS_W_VALUE_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0BSET    FC
+        ; ABI:
+        ; in: A: descriptor index
+        ; out: (see usb_get_string_descriptor_address_and_length)
+        CALL      usb_get_configuration_descriptor_address_and_length
+        JMP       _handle_get_descriptor_respond
+_usb_get_string_descriptor:
+        B0MOV     A, #UDPR0_ADDRESS_W_VALUE_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0BSET    FC
+        ; ABI:
+        ; in: A: descriptor index
         ; out: usb_descriptor_pointer_l,h set to in-flash address of first word
         ;      usb_data_in_skip_low_byte  set if low byte of first word must be skipped
         ;      usb_setup_data_len_l,h     set to descriptor length (ignore wLength)
-        ;      FC                         set to stall (above values are then ignored)
-        ; descriptor is expected packed in flash. For ex, to send 0x01, 0x23, 0x45:
+        ;      FC                         clear to ACK (otherwise above values are then ignored and a stall is sent back)
+        ; descriptor is expected packed in flash.
+        CALL      usb_get_string_descriptor_address_and_length
+
+        ; For ex, to send 0x01, 0x23, 0x45:
         ; dummy_descriptor: DB  0x01, 0x23, 0x45
-        ; usb_get_descriptor_address_and_length:
-        ;       B0MOV   usb_descriptor_pointer_l, dummy_descriptor$L
-        ;       B0MOV   usb_descriptor_pointer_h, dummy_descriptor$H
+        ; usb_get_string_descriptor_address_and_length:
+        ;       MOV     A, #dummy_descriptor$L
+        ;       B0MOV   usb_descriptor_pointer_l, A
+        ;       MOV     A, #dummy_descriptor$H
+        ;       B0MOV   usb_descriptor_pointer_h, A
         ;       MOV     A, #3
         ;       B0MOV   usb_setup_data_len_l, A
         ;       MOV     A, #0
@@ -522,7 +583,8 @@ _handle_get_descriptor:
         ;       B0BCLR  usb_data_in_skip_low_byte
         ;       B0BCLR  FC
         ;       RET
-        CALL      usb_get_descriptor_address_and_length
+
+_handle_get_descriptor_respond:
         B0BTS0    FC
         JMP       usb_deferred_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
