@@ -685,10 +685,11 @@ _handle_get_interface:
         B0MOV     A, _active_configuration
         B0BTS0    FZ
         JMP       usb_deferred_stall_ep0        ; GET_INTERFACE on unconfigured device
+        B0BSET    FC
         ; ABI:
         ; in: (nil)
-        ; out: FC set to STALL
-        ;      otherwise, R contains the answer
+        ; out: clear FC to ack (default: stall)
+        ;      R contains the answer when FC cleared
         CALL      usb_get_interface
         B0BTS0    FC
         JMP       usb_deferred_stall_ep0
@@ -720,9 +721,10 @@ _handle_set_interface:
         B0MOV     A, _active_configuration
         B0BTS0    FZ
         JMP       usb_deferred_stall_ep0        ; SET_INTERFACE on unconfigured device
+        B0BSET    FC
         ; ABI:
         ; in: (nil)
-        ; out: FC set to STALL, otherwise ACK
+        ; out: clear FC to ACK (default: stall)
         CALL      usb_set_interface
         B0BTS0    FC
         JMP       usb_deferred_stall_ep0
