@@ -30,14 +30,14 @@
 ; - needs 7 bytes in page zero
 
 .DATA
-_bmRequestType          EQU 0
-_bRequest               EQU 1
-_wValueL                EQU 2
-_wValueH                EQU 3
-_wIndexL                EQU 4
-_wIndexH                EQU 5
-_wLengthL               EQU 6
-_wLengthH               EQU 7
+UDPR0_ADDRESS_BM_REQUEST_TYPE EQU 0
+UDPR0_ADDRESS_B_REQUEST       EQU 1
+UDPR0_ADDRESS_W_VALUE_L       EQU 2
+UDPR0_ADDRESS_W_VALUE_H       EQU 3
+UDPR0_ADDRESS_W_INDEX_L       EQU 4
+UDPR0_ADDRESS_W_INDEX_H       EQU 5
+UDPR0_ADDRESS_W_LENGTH_L      EQU 6
+UDPR0_ADDRESS_W_LENGTH_H      EQU 7
 
 _pending_address        DS  1
 ; Bit 7 is actually FUDE, making it a handy flag to detect SET_ADDRESS(0)
@@ -200,7 +200,7 @@ _handle_setupdata:
         B0BCLR    _ep0_stall_next_stage
         B0BCLR    _ep0_handoff
         B0BCLR    _setup_data_out
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         AND       A, #0x60
@@ -209,7 +209,7 @@ _handle_setupdata:
         B0BSET    _ep0_handoff              ; Non-standard setup request, hand-off to firmware
         JMP       usb_on_setupdata
 @@:
-        MOV       A, #_bRequest
+        MOV       A, #UDPR0_ADDRESS_B_REQUEST
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         SUB       A, #13
@@ -235,32 +235,32 @@ _handle_setupdata:
 _handle_get_status:
         ; All fields must be 0, except wLengthL wich must be 2 and wIndexL
         ; which depends on bmRequestType.
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueH
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexH
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #2
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    UDR0_R.7
@@ -275,7 +275,7 @@ _handle_get_status:
         JMP       _handle_get_device_status
         JMP       _handle_get_interface_status
         ; handle get endpoint status
-        MOV       A, #_wIndexL
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         ; XXX: ignore endpoint direction bit. There is no easy way to know the
@@ -318,7 +318,7 @@ _handle_get_ep3_status:
         B0MOV     R, #0x01
         JMP       _respond_get_status
 _handle_get_device_status:
-        MOV       A, #_wIndexL
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
@@ -351,27 +351,27 @@ _handle_clear_feature:
         B0BCLR    _set_feature
 _handle_set_clear_feature:
         ; wIndexH, wValueH and wLength must be zero.
-        MOV       A, #_wValueH
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexH
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #2
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS0    UDR0_R.7
@@ -387,12 +387,12 @@ _handle_set_clear_feature:
         JMP       usb_deferred_stall_ep0        ; interface: no standard feature
         ; handle clear endpoint feature
         ; wValueL must be 0
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexL
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         ; XXX: ignore endpoint direction bit. There is no easy way to know the
@@ -441,7 +441,7 @@ _respond_set_clear_feature:
         JMP       usb_ack_ep0
 _handle_set_clear_device_feature:
         ; wValueL must be 1, test_mode is not supported.
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
@@ -457,38 +457,38 @@ _handle_set_feature:
         JMP       _handle_set_clear_feature
 
 _handle_set_address:
-        ; All fields must be zero, except _wValueL which must be 0..127
-        MOV       A, #_bmRequestType
+        ; All fields must be zero, except UDPR0_ADDRESS_W_VALUE_L which must be 0..127
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueH
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexL
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexH
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS0    UDR0_R.7
@@ -499,7 +499,7 @@ _handle_set_address:
         JMP       usb_ack_ep0
 
 _handle_get_descriptor:
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x80
@@ -525,7 +525,7 @@ _handle_get_descriptor:
         CALL      usb_get_descriptor_address_and_length
         B0BTS0    FC
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         XOR       A, #0xff
@@ -537,13 +537,13 @@ _handle_get_descriptor:
         JMP       @F                                  ; same MSB, check LSB
         B0MOV     A, UDR0_R                           ; wLengthH < usb_setup_data_len_h: use wLengthH,L
         B0MOV     usb_setup_data_len_h, A
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0MOV     usb_setup_data_len_l, A
         JMP       _handle_get_descriptor_done
 @@:
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         ; the only important outcome is if wLengthL > usb_setup_data_len_l, a one's complement is enough
@@ -559,37 +559,37 @@ _handle_get_descriptor_done:
         JMP       usb_ack_ep0
         
 _handle_get_configuration:
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x80
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueH
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexL
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexH
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
@@ -604,37 +604,37 @@ _handle_get_configuration:
         JMP       usb_ack_ep0
 
 _handle_set_configuration:
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueH
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexL
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexH
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0MOV     _active_configuration, A
@@ -652,32 +652,27 @@ _handle_set_configuration:
         JMP       usb_deferred_stall_ep0
 
 _handle_get_interface:
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x81
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueL
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wValueH
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wIndexH
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
-        B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
@@ -703,17 +698,17 @@ _handle_get_interface:
         JMP       usb_ack_ep0
 
 _handle_set_interface:
-        MOV       A, #_bmRequestType
+        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthL
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
-        MOV       A, #_wLengthH
+        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
