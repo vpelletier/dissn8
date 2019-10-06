@@ -16,6 +16,7 @@
 
 from __future__ import absolute_import
 from io import BytesIO
+import os
 import unittest
 from .assn8 import assemble
 from . import simsn8
@@ -82,6 +83,7 @@ class SimSN8F2288TestBase(unittest.TestCase):
             u'.CODE\n'
             u'ORG 0\n' +
             source + '\n',
+            debug=bool(os.getenv('SN8DEBUG')),
             include=include,
         )))
 

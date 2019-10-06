@@ -830,7 +830,7 @@ class Assembler(object):
                 right,
             ))
 
-def assemble(source, include=None):
+def assemble(source, include=None, debug=False):
     """
     Assemble given source and return binary image.
 
@@ -842,7 +842,7 @@ def assemble(source, include=None):
     source_file.name = 'noname.asm'
     getRomWord = Assembler(
         source_file=source_file,
-        debug=False,
+        debug=debug,
         include=include,
     ).rom.get
     return b''.join(
