@@ -78,6 +78,15 @@ usb_descriptor_pointer_h    DS 1
 usb_setup_data_len_l        DS 1
 usb_setup_data_len_h        DS 1
 
+USB_DT_DEVICE             EQU 0x01
+USB_DT_CONFIG             EQU 0x02
+USB_DT_STRING             EQU 0x03
+USB_DT_INTERFACE          EQU 0x04
+USB_DT_ENDPOINT           EQU 0x05
+USB_DT_HID                EQU 0x21
+USB_DT_REPORT             EQU 0x22
+USB_DT_PHYSICAL           EQU 0x23
+
 .CODE
 ; Initialises usb-related variables (not registers)
 usb_init: ; modifies: A
