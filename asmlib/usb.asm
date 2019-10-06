@@ -226,17 +226,17 @@ _handle_setupdata:
         B0ADD     PCL, A
         JMP       _handle_get_status        ; 0
         JMP       _handle_clear_feature     ; 1
-        JMP       usb_deferred_stall_ep0        ; 2 reserved
+        JMP       usb_deferred_stall_ep0    ; 2 reserved
         JMP       _handle_set_feature       ; 3
-        JMP       usb_deferred_stall_ep0        ; 4 reserved
+        JMP       usb_deferred_stall_ep0    ; 4 reserved
         JMP       _handle_set_address       ; 5
         JMP       _handle_get_descriptor    ; 6
-        JMP       usb_deferred_stall_ep0        ; 7 SET_DESCRIPTOR (XXX: support ?)
+        JMP       usb_deferred_stall_ep0    ; 7 SET_DESCRIPTOR (XXX: support ?)
         JMP       _handle_get_configuration ; 8
         JMP       _handle_set_configuration ; 9
         JMP       _handle_get_interface     ; 10
         JMP       _handle_set_interface     ; 11
-        JMP       usb_deferred_stall_ep0        ; 12 SYNCH_FRAME, no ISO support
+        JMP       usb_deferred_stall_ep0    ; 12 SYNCH_FRAME, no ISO support
         ; unreachable
 
 _handle_get_status:
