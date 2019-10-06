@@ -499,7 +499,7 @@ class Assembler(object):
 
     def p_emitable_label(self, production):
         '''
-        emitable : IDENTIFIER ':' EOL
+        emitable : IDENTIFIER ':'
         '''
         name = production[1]
         if name in (AUTO_LABEL_FORWARD, AUTO_LABEL_BACKWARD):
