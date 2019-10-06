@@ -559,6 +559,15 @@ class Assembler(object):
         '''
         production[0] = production[1]
 
+    def p_data_item_identifier(self, production):
+        '''
+        data_item : IDENTIFIER
+        '''
+        name = production[1]
+        production[0] = (
+            self.getIdentifier(name, acquire=not name.startswith('_')).value,
+        )
+
     @staticmethod
     def p_data_item_number(production):
         '''
