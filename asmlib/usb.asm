@@ -525,7 +525,7 @@ _handle_get_descriptor:
         B0MOV     A, UDR0_R
         B0BTS0    FZ
         JMP       usb_deferred_stall_ep0
-        B0MOV     A, #UDPR0_ADDRESS_W_INDEX_L
+        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS0    FZ
@@ -536,7 +536,7 @@ _handle_get_descriptor:
         JMP       _get_configuration_descriptor
 @@:
         ; Not a configuration descriptor, wValueL must be zero
-        B0MOV     A, #UDPR0_ADDRESS_W_VALUE_L
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS0    FZ
@@ -551,7 +551,7 @@ _handle_get_descriptor:
         CALL      usb_get_device_descriptor_address_and_length
         JMP       _handle_get_descriptor_respond
 _get_configuration_descriptor:
-        B0MOV     A, #UDPR0_ADDRESS_W_VALUE_L
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BSET    FC
@@ -561,7 +561,7 @@ _get_configuration_descriptor:
         CALL      usb_get_configuration_descriptor_address_and_length
         JMP       _handle_get_descriptor_respond
 _usb_get_string_descriptor:
-        B0MOV     A, #UDPR0_ADDRESS_W_VALUE_L
+        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BSET    FC
