@@ -13,8 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+from future import standard_library
+standard_library.install_aliases()
+from builtins import range
+from builtins import object
 from collections import defaultdict
-import ConfigParser
+import configparser
 
 NUL_SPACE = None # No operand
 ZRO_SPACE = 0    # Operand is zero-page ram address
@@ -43,10 +47,10 @@ class MultiRange(object):
 
     def __iter__(self):
         for start, stop, in self.range_list:
-            for value in xrange(start, stop):
+            for value in range(start, stop):
                 yield value
 
-class CasedSafeConfigParser(ConfigParser.SafeConfigParser):
+class CasedSafeConfigParser(configparser.SafeConfigParser):
     @staticmethod
     def optionxform(optionstr):
         return optionstr
@@ -77,7 +81,7 @@ def parseConfig(config_file_list):
         elif section_name in ('comment', 'rom', 'callee'):
             section = {
                 int(address, 0):  value
-                for address, value in section.iteritems()
+                for address, value in section.items()
             }
         elif section_name.startswith('ram'):
             priority = 0
@@ -96,7 +100,7 @@ def parseConfig(config_file_list):
             continue
         elif section_name == 'code-option':
             new_section = {}
-            for option_name, option_definition in section.iteritems():
+            for option_name, option_definition in section.items():
                 address, mask, value_names = option_definition.split(' ', 2)
                 address = int(address, 0)
                 mask = int(mask, 0)

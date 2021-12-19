@@ -15,6 +15,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 from __future__ import absolute_import
+from builtins import zip
 from io import BytesIO
 import os
 import unittest
@@ -28,7 +29,7 @@ def _diffDict(a, b):
     key_set = set(a)
     unique_key_set = key_set.symmetric_difference(b)
     if unique_key_set:
-        raise ValueError(a.keys(), b.keys())
+        raise ValueError(list(a.keys()), list(b.keys()))
     for key in key_set:
         value_diff = diff(a[key], b[key])
         if value_diff is not EQUAL:
@@ -91,7 +92,7 @@ class SimSN8F2288TestBase(unittest.TestCase):
     def _stripStateTiming(state):
         return {
             x: y
-            for x, y in state.iteritems()
+            for x, y in state.items()
             if x not in ('run_time', 'cycle_count', 'slow_clock')
         }
 

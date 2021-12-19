@@ -15,6 +15,13 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from builtins import hex
+from builtins import chr
+from builtins import range
+from past.utils import old_div
+from builtins import object
 from functools import partial
 import os.path
 from struct import unpack
@@ -665,9 +672,9 @@ class Port(object):
         self.max_zero = vdd * .2
         self.min_one = vdd * .8
         self.source_current = source_current
-        self.source_impedance = self.min_one / source_current
+        self.source_impedance = old_div(self.min_one, source_current)
         self.sink_current = sink_current
-        self.sink_impedance = self.max_zero / sink_current
+        self.sink_impedance = old_div(self.max_zero, sink_current)
         self.pull_up_impedance = pull_up
         # Assume floating pins: infinite impedance towards Vss.
         # (volts, impedance)
@@ -730,9 +737,9 @@ class Port(object):
                     # Voltage divisor:
                     # Vdd-{pull_up_impedance}-pin-{load_impedance}-load_voltage
                     voltage = self.vdd - (
-                        (
+                        old_div((
                             self.vdd - load_voltage
-                        ) / (load_impedance + self.pull_up_impedance)
+                        ), (load_impedance + self.pull_up_impedance))
                     ) * self.pull_up_impedance
                 else:
                     voltage = load_voltage
@@ -896,7 +903,7 @@ class SN8(object):
         self.push_buf = (None, None)
         self.flash = [
             unpack('<H', flash_file.read(2))[0]
-            for _ in xrange(0x3000)
+            for _ in range(0x3000)
         ]
         # TODO: update on rom write
         self.disassembly = systematic(dict(enumerate(self.flash)))
@@ -1104,7 +1111,7 @@ class SN8(object):
                         self.ram[self.addressOf('STK7H') + x * 2] << 8
                     ) | self.ram[self.addressOf('STK7L') + x * 2]
                 )
-                for x in xrange(7, self.STKP & 0x7f, -1)
+                for x in range(7, self.STKP & 0x7f, -1)
             ),
         )
 
@@ -1125,7 +1132,7 @@ class SN8(object):
             return
         pc = self.pc
         if pc in self.breakpoint_set:
-            print 'bp %#06x %r' % (pc, self)
+            print('bp %#06x %r' % (pc, self))
             import pdb; pdb.set_trace()
         instruction = self.flash[pc]
         if instruction in self._no_operand_instruction_dict:
@@ -1176,7 +1183,7 @@ class SN8(object):
                 raise ValueError(
                     'Firmware is trying to write register area to flash.',
                 )
-            for index in xrange(word_count):
+            for index in range(word_count):
                 ram_index = index * 2
                 self.flash[base_address + index] = (
                     self.read(ram_index + 1) << 8
@@ -1184,7 +1191,7 @@ class SN8(object):
             self.run_time += 2 # 1~2ms to write a page
         else: # Erase
             base_address &= ~0x7f
-            for address in xrange(
+            for address in range(
                 base_address,
                 base_address + 0x80,
             ):
@@ -1314,7 +1321,7 @@ class SN8(object):
             0x80: 4,
         }[code_options & 0x80] / 12.
         self.slow_clock_threshold = (
-            self.low_speed_cycle_duration_ms / self.high_speed_cycle_duration_ms
+            old_div(self.low_speed_cycle_duration_ms, self.high_speed_cycle_duration_ms)
         )
 
     def reset(self, source):
@@ -1723,7 +1730,7 @@ def newChip(name):
     )])
     # TODO: pull more from config, and de-hardcode from SN8
     dikt = {}
-    for address, register_name in config['ram-reserved'].iteritems():
+    for address, register_name in list(config['ram-reserved'].items()):
         assert not hasattr(base, register_name)
         assert register_name not in dikt
         if '.' in address:

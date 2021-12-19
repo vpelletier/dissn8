@@ -18,6 +18,11 @@
 SN8 assembler.
 """
 from __future__ import absolute_import
+from __future__ import print_function
+from builtins import next
+from builtins import range
+from past.builtins import basestring
+from builtins import object
 import argparse
 import ast
 from collections import defaultdict
@@ -46,7 +51,7 @@ INSTRUCTION_TOKEN = 'INSTRUCTION'
 NUMBER_TOKEN = 'NUMBER'
 STRING_TOKEN = 'STRING'
 INSTRUCTION_DICT = defaultdict(list)
-for opcode, (_, _, _, _, instruction, _, _) in opcode_dict.iteritems():
+for opcode, (_, _, _, _, instruction, _, _) in list(opcode_dict.items()):
     INSTRUCTION_DICT[instruction].append(opcode)
 INSTRUCTION_DICT = dict(INSTRUCTION_DICT)
 BYTE_SELECTOR_FUNCTION_DICT = {
@@ -253,7 +258,7 @@ class Assembler(object):
         self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
         if len(self._parser_stack) == 1:
             # Any remaining undefined label is an error.
-            undefined_identifier_list = self.label_referer_dict.keys()
+            undefined_identifier_list = list(self.label_referer_dict.keys())
         else:
             # Only local undefined labels are an error.
             undefined_identifier_list = [
@@ -282,13 +287,13 @@ class Assembler(object):
         # Sanity check
         if chip['chip']['name'].lower() != production[2].lower():
             raise ValueError('Inconsistent chip config file: %r' % config.name)
-        for address, mask, value_names in chip['code-option'].itervalues():
+        for address, mask, value_names in list(chip['code-option'].values()):
             if mask == 0:
                self.rom[address] = value_names # Actually a single value
-        for address, name in chip['rom'].iteritems():
+        for address, name in list(chip['rom'].items()):
             self.chip_identifier_dict[name] = Address(address)
         for _, _, _, ram_dict in chip['ram']:
-            for address, name in ram_dict.iteritems():
+            for address, name in list(ram_dict.items()):
                 if '.' in address:
                     word_address, bit_address = address.split('.')
                     address = BitAddress(
@@ -346,7 +351,7 @@ class Assembler(object):
             shift += 1
             mask >>= 1
         self.rom[address] |= {
-            y: x for x, y in value_names.iteritems()
+            y: x for x, y in list(value_names.items())
         }[production[3]] << shift
 
     def _findFile(self, include_filename):
@@ -693,11 +698,11 @@ class Assembler(object):
                 print('Left %r' % source_file)
         if parent_frame is not None:
             parent_frame.address = frame.address_until_origin
-            for key, value in frame.label_referer_dict.iteritems():
+            for key, value in list(frame.label_referer_dict.items()):
                 if key.startswith('_'):
                     continue
                 parent_frame.label_referer_dict[key].extend(value)
-            for key, value in frame.identifier_dict.iteritems():
+            for key, value in list(frame.identifier_dict.items()):
                 if key.startswith('_'):
                     # Do not export symbols starting with an underscore.
                     continue
@@ -863,7 +868,7 @@ def assemble(source, include=None, debug=False):
     ).rom.get
     return b''.join(
         pack('<H', getRomWord(x, 0))
-        for x in xrange(0x3000)
+        for x in range(0x3000)
     )
 
 def main():
@@ -902,7 +907,7 @@ def main():
         )
     with args.output as outfile:
         write = outfile.write
-        for address in xrange(0x3000):
+        for address in range(0x3000):
             write(pack('<H', assembler.rom.get(address, 0)))
 
 if __name__ == '__main__':

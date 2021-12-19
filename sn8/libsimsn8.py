@@ -19,6 +19,7 @@ Peripheral simulation.
 """
 from __future__ import absolute_import
 
+from builtins import object
 I2C_IDLE = 0
 I2C_ADDRESS = 1
 I2C_DATA = 2

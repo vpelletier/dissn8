@@ -19,6 +19,8 @@ FOR INTERACTIVE USE ONLY !
 This is not a python module, do not import it - run it.
 """
 from __future__ import print_function, division
+from builtins import hex
+from builtins import range
 import argparse
 import contextlib
 import struct
@@ -388,7 +390,7 @@ def main():
             # XXX: will detach kernel driver in order to be allowed access to
             # EP0. This means the keyboard (if booted in keyboard mode) will
             # not be usable. Warn user ? Look for another active keyboard ?
-            for interface in xrange(len(device[active_configuration - 1])):
+            for interface in range(len(device[active_configuration - 1])):
                 try:
                     device_handle.detachKernelDriver(interface)
                 except usb1.USBErrorNotFound:
