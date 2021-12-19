@@ -1211,7 +1211,12 @@ class SN8(object):
     def read(self, address):
         assert (address & 0x3ff) == address, hex(address)
         if address in self._volatile_dict:
-            value = self._volatile_dict[address][0]()
+            reader = self._volatile_dict[address][0]
+            if reader is None:
+                warnings.warn('Ignoring read from %#06x' % address)
+                value = 0
+            else:
+                value = reader()
         else:
             value = self.ram[address]
             if value is MISS:
