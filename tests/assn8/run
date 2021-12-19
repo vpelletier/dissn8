@@ -13,7 +13,7 @@ for expected in *.expected.gz; do
     echo "assembled cmp failed"
     continue
   fi
-  if ../../dissn8 -c ../../sn8f2288.cfg -o "$disassembled" "$produced"; then :; else
+  if ../../dissn8 -c ../../sn8/sn8f2288.cfg -o "$disassembled" "$produced"; then :; else
     echo "dissn8 failed"
     continue
   fi

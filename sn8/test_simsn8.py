@@ -15,13 +15,12 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from __future__ import absolute_import
 import unittest
 from .test_base import SimSN8F2288TestBase, EQUAL
 
 class SimSN8F2288Tests(SimSN8F2288TestBase):
     def testJMP(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 NOP
                 JMP $
         ''')
@@ -43,7 +42,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         self.assertEqual(self._stripStateTiming(state1), self._stripStateTiming(state2))
 
     def testCALL_RET(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 CALL    func
                 MOV     A, #0x01
                 B0MOV   STKP, A
@@ -146,7 +145,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def _testMOV_BSET_BCLR(self, bank):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 MOV     A, #0x55
                 MOV     0x00, A
                 B0MOV   0x01, A
@@ -273,7 +272,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         self._testMOV_BSET_BCLR(2)
 
     def testInterrupt_RETI(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0BSET  FGIE
                 JMP     $
             ORG 8
@@ -320,7 +319,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         self.assertStrippedDifferenceEqual(state2, sim.getState(), EQUAL)
 
     def testPushPop(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 MOV     A, #0xaa
                 B0BSET  FC
                 B0BSET  FZ
@@ -394,7 +393,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def test_MOVC(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
         .DATA
         data    EQU 0x2345
         .CODE
@@ -440,7 +439,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def test_XCH(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0MOV   RBANK, #1
                 MOV     A, #0x55
                 MOV     0x00, A
@@ -515,7 +514,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def test_SWAP(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0MOV   RBANK, #1
                 MOV     A, #0xf0
                 MOV     0x00, A
@@ -574,7 +573,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         # - the 2 variable results differ for all 3 instructions
         # - all 3 variants are exercised (AM, MA, AI)
         # - for AM and MA variants, result differs from both operands
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0MOV   RBANK, #1
                 MOV     A, #0x0f
                 MOV     0x00, A
@@ -592,7 +591,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
             'z0': 'SET' if res0 else 'CLR',
             'z1': 'SET' if res1 else 'CLR',
         })
-        for _ in xrange(5):
+        for _ in range(5):
             sim.step()
         state_before = sim.getState()
         sim.step()
@@ -646,7 +645,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         self._test_logic('XOR', (0xff, 0xf1))
 
     def test_rotor(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0MOV   RBANK, #1
                 MOV     A, #0xa5
                 MOV     0x00, A
@@ -723,7 +722,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def test_ADD_ADC_SUB_SBC(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0MOV   RBANK, #1
                 ; {ADD,SUB} A, I without carry but with nibble carry
                 MOV     A, #0xef
@@ -979,7 +978,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def test_jumpTable(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 MOV     A, #0x05
                 B0ADD   PCL, A
         ''')
@@ -998,7 +997,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
         )
 
     def test_conditionals(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
                 B0MOV   RBANK, #1
 
                 MOV     A, #0x02    ; for CMPRS
@@ -1070,7 +1069,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
                 B0BTS1  0x08.1
                 JMP     $       ; it's a trap !
         ''')
-        for _ in xrange(20):
+        for _ in range(20):
             sim.step()
 
         state0 = sim.getState()

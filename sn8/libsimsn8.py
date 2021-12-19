@@ -17,13 +17,13 @@
 """
 Peripheral simulation.
 """
-from __future__ import absolute_import
+from struct import unpack
 
 I2C_IDLE = 0
 I2C_ADDRESS = 1
 I2C_DATA = 2
 I2C_IGNORE = 3
-class BitBanging8bitsI2C(object):
+class BitBanging8bitsI2C:
     def __init__(
         self,
         address,

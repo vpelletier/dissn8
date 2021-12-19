@@ -14,7 +14,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from __future__ import absolute_import
 from io import BytesIO
 import os
 import unittest
@@ -28,7 +27,7 @@ def _diffDict(a, b):
     key_set = set(a)
     unique_key_set = key_set.symmetric_difference(b)
     if unique_key_set:
-        raise ValueError(a.keys(), b.keys())
+        raise ValueError(list(a), list(b))
     for key in key_set:
         value_diff = diff(a[key], b[key])
         if value_diff is not EQUAL:
@@ -72,16 +71,16 @@ def diff(a, b):
 
 class SimSN8F2288TestBase(unittest.TestCase):
     @staticmethod
-    def _getSimulator(source, watchdog=u'Disable', include=None):
+    def _getSimulator(source, watchdog='Disable', include=None):
         return simsn8.SN8F2288(BytesIO(assemble(
             # Boilerplate stuff.
-            u'CHIP SN8F2288\n'
-            u'//{{SONIX_CODE_OPTION\n'
-            u'    .Code_Option Watch_Dog "' + watchdog + u'"\n'
-            u'    .Code_Option LVD "LVD_M"\n'
-            u'//}}SONIX_CODE_OPTION\n'
-            u'.CODE\n'
-            u'ORG 0\n' +
+            'CHIP SN8F2288\n'
+            '//{{SONIX_CODE_OPTION\n'
+            '    .Code_Option Watch_Dog "' + watchdog + '"\n'
+            '    .Code_Option LVD "LVD_M"\n'
+            '//}}SONIX_CODE_OPTION\n'
+            '.CODE\n'
+            'ORG 0\n' +
             source + '\n',
             debug=bool(os.getenv('SN8DEBUG')),
             include=include,
@@ -91,7 +90,7 @@ class SimSN8F2288TestBase(unittest.TestCase):
     def _stripStateTiming(state):
         return {
             x: y
-            for x, y in state.iteritems()
+            for x, y in state.items()
             if x not in ('run_time', 'cycle_count', 'slow_clock')
         }
 

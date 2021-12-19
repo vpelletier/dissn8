@@ -13,8 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-from collections import defaultdict
-import ConfigParser
+import configparser
 
 NUL_SPACE = None # No operand
 ZRO_SPACE = 0    # Operand is zero-page ram address
@@ -22,7 +21,7 @@ RAM_SPACE = 1    # Operand is ram address
 ROM_SPACE = 2    # Operand is rom address
 IMM_SPACE = 3    # Operand is immediate value
 
-class MultiRange(object):
+class MultiRange:
     def __init__(self, definition, min_boundary, max_boundary):
         self.range_list = range_list = []
         for span in definition.split(","):
@@ -43,10 +42,10 @@ class MultiRange(object):
 
     def __iter__(self):
         for start, stop, in self.range_list:
-            for value in xrange(start, stop):
+            for value in range(start, stop):
                 yield value
 
-class CasedSafeConfigParser(ConfigParser.SafeConfigParser):
+class CasedSafeConfigParser(configparser.ConfigParser):
     @staticmethod
     def optionxform(optionstr):
         return optionstr
@@ -54,7 +53,7 @@ class CasedSafeConfigParser(ConfigParser.SafeConfigParser):
 def parseConfig(config_file_list):
     chip_config = CasedSafeConfigParser()
     for chip_file in config_file_list:
-        chip_config.readfp(chip_file)
+        chip_config.read_file(chip_file)
     chip = {
         'rom': {},
     }
@@ -77,7 +76,7 @@ def parseConfig(config_file_list):
         elif section_name in ('comment', 'rom', 'callee'):
             section = {
                 int(address, 0):  value
-                for address, value in section.iteritems()
+                for address, value in section.items()
             }
         elif section_name.startswith('ram'):
             priority = 0
@@ -96,7 +95,7 @@ def parseConfig(config_file_list):
             continue
         elif section_name == 'code-option':
             new_section = {}
-            for option_name, option_definition in section.iteritems():
+            for option_name, option_definition in section.items():
                 address, mask, value_names = option_definition.split(' ', 2)
                 address = int(address, 0)
                 mask = int(mask, 0)
@@ -122,6 +121,7 @@ def parseConfig(config_file_list):
     chip['chip']['rom_stop'] = int(chip['chip']['rom_stop'], 0)
     return chip
 
+# pylint: disable=unused-argument
 def NONXT(
     entry_stack, jumper_dict, caller_dict, rom_symbol_dict, function_dict,
     addr, operand, function,
@@ -129,7 +129,6 @@ def NONXT(
     """
     There is no fixed next-instruction address (RET & RETI).
     """
-    pass
 
 def NEXTI(
     entry_stack, jumper_dict, caller_dict, rom_symbol_dict, function_dict,
@@ -194,8 +193,9 @@ def CALLI(
     entry_stack.append((operand, callee_name))
     entry_stack.append((addr + 1, function))
     caller_dict[operand].append(addr)
+# pylint: enable=unused-argument
 
-class Operand(object):
+class Operand:
     def __ne__(self, other):
         return not self == other
 

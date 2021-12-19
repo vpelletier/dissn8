@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2019  Vincent Pelletier <plr.vincent@gmail.com>
 #
 # This program is free software; you can redistribute it and/or
@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-from __future__ import division
+
 import argparse
 from collections import defaultdict
 from functools import partial
@@ -23,16 +23,8 @@ import warnings
 from sn8.simsn8 import SN8F2288, INF, EndpointStall, EndpointNAK, RESET_SOURCE_LOW_VOLTAGE
 from sn8.libsimsn8 import BitBanging8bitsI2C
 
-try:
-    _ = ord(b'\x00'[0])
-except TypeError:
-    # Python 3
-    byte_ord = lambda x: x
-else:
-    byte_ord = ord
-
 def hexdump(value):
-    return ' '.join('%02x' % byte_ord(x) for x in value)
+    return ' '.join('%02x' % x for x in value)
 
 MOUSE_IDLE = 0
 MOUSE_INIT1 = 1
@@ -44,7 +36,7 @@ USB_RECIPIENT_ENDPOINT = 0x02
 class Timeout(Exception):
     pass
 
-class KU1255(object):
+class KU1255:
     def __init__(self, firmware):
         self.cpu = cpu = SN8F2288(firmware)
         # Key matrix emulation
@@ -66,7 +58,7 @@ class KU1255(object):
             partial(cpu.p4.getInternalAsLoad, 6),
             partial(cpu.p4.getInternalAsLoad, 7),
         ]
-        for column in xrange(8):
+        for column in range(8):
             cpu.p1.setLoad(column, partial(self.getKeyLoad, column))
         # USB host emulation
         usb = cpu.usb
@@ -98,7 +90,7 @@ class KU1255(object):
         self._trace = value
 
     def _tracer(self):
-        print repr(self.cpu)
+        print(repr(self.cpu))
 
     def __repr__(self):
         mouse_buttons = []
@@ -110,11 +102,11 @@ class KU1255(object):
         if mouse_buttons_byte & 2:
             mouse_buttons.append('right')
         return '<%s@%08x usb=%s keys=%s mouse=%s>' % (
-            sefl.__class__.__name__,
+            self.__class__.__name__,
             id(self),
             (
                 (
-                    'suspended' if self.cpu.usb.suspend else 'on'
+                    'suspended' if self.cpu.usb.FSUSPEND else 'on'
                 ) + ',' + ','.join(
                     'ep%i' % x
                     for x, y in enumerate(self.usb_is_endpoint_enabled)
@@ -142,11 +134,11 @@ class KU1255(object):
         # Key matrix
         self.row_list_by_column = [
             []
-            for x in xrange(8)
+            for x in range(8)
         ]
         self.column_list_by_row = [
             []
-            for x in xrange(len(self.matrix))
+            for x in range(len(self.matrix))
         ]
         # USB
         self.usb_is_enabled = False
@@ -567,7 +559,7 @@ def main():
     parser.add_argument('firmware', help='Binary firmware image')
     # XXX: add save-state support ?
     args = parser.parse_args()
-    with open(args.firmware) as firmware:
+    with open(args.firmware, 'rb') as firmware:
         device = KU1255(firmware)
 
     def sleep(duration):
@@ -588,37 +580,37 @@ def main():
     # Based on linux enumeration sequence
     device_descriptor = device.getDescriptor(1, 8)
     sleep(1)
-    print 'pre-address device desc:', hexdump(device_descriptor)
+    print('pre-address device desc:', hexdump(device_descriptor))
     device.setAddress(1)
     sleep(1)
-    print 'address set'
-    total_length = byte_ord(device_descriptor[0])
+    print('address set')
+    total_length = device_descriptor[0]
     device_descriptor = device.getDescriptor(1, total_length)
     sleep(1)
-    print 'full device desc:', hexdump(device_descriptor)
-    for _ in xrange(3):
+    print('full device desc:', hexdump(device_descriptor))
+    for _ in range(3):
         try:
             device_qualifier = device.getDescriptor(6, 0x0a)
         except EndpointStall:
             continue
         else:
-            print 'device qualifier:', hexdump(device_qualifier)
+            print('device qualifier:', hexdump(device_qualifier))
             break
         finally:
             sleep(1)
     config_descriptor_head = device.getDescriptor(2, 9)
     sleep(1)
-    print 'config desc head:', hexdump(config_descriptor_head)
+    print('config desc head:', hexdump(config_descriptor_head))
     total_length, = unpack('<H', config_descriptor_head[2:4])
-    print 'len', total_length
+    print('len', total_length)
     config_descriptor = device.getDescriptor(2, total_length)
     sleep(1)
-    print 'config desc:', hexdump(config_descriptor)
+    print('config desc:', hexdump(config_descriptor))
     first_supported_language, = unpack('<H', device.getDescriptor(3, 255)[2:4])
     sleep(1)
-    print 'string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16')
+    print('string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16'))
     sleep(1)
-    print 'string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16')
+    print('string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16'))
     sleep(1)
     device.setConfiguration(1)
     sleep(1)
@@ -626,7 +618,7 @@ def main():
     sleep(1)
     hid_descriptor_ep1 = device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
     sleep(1)
-    print 'HID descr interface 0:', hexdump(hid_descriptor_ep1)
+    print('HID descr interface 0:', hexdump(hid_descriptor_ep1))
     device.setHIDReport(2, 0, 0, b'\x00')
     sleep(1)
     report_0_length = (
@@ -648,7 +640,7 @@ def main():
     sleep(1)
     hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1, timeout=15) # XXX: should parse config_descriptor
     sleep(1)
-    print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
+    print('HID descr interface 1:', hexdump(hid_descriptor_ep2))
     report_1_length = (
         1 * 5 + # buttons
         3 * 1 + # padding
@@ -671,23 +663,23 @@ def main():
     sleep(1)
 
     # Exercising other standard requests
-    print 'active configuration:', device.getConfiguration()
+    print('active configuration:', device.getConfiguration())
     sleep(1)
-    print 'interface 0 active alt setting:', device.getInterface(0)
+    print('interface 0 active alt setting:', device.getInterface(0))
     sleep(1)
-    print 'interface 1 active alt setting:', device.getInterface(1)
+    print('interface 1 active alt setting:', device.getInterface(1))
     sleep(1)
-    print 'HID protocol interface 0:', device.getHIDProtocol(0)
+    print('HID protocol interface 0:', device.getHIDProtocol(0))
     sleep(1)
-    print 'HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)'
+    print('HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)')
     sleep(1)
-    print 'HID protocol interface 1:', device.getHIDProtocol(1)
+    print('HID protocol interface 1:', device.getHIDProtocol(1))
     sleep(1)
-    print 'HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)'
+    print('HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)')
     sleep(1)
 
-    print 'saved fnLock state:', device.getSavedFnLock()
-    print 'saved mouse speed:', device.getSavedMouseSpeed()
+    print('saved fnLock state:', device.getSavedFnLock())
+    print('saved mouse speed:', device.getSavedMouseSpeed())
     deadline = device.cpu.run_time + 200
     while device.mouse_initialisation_state != MOUSE_INITIALISED and device.cpu.run_time < deadline:
         device.step()
@@ -696,7 +688,7 @@ def main():
     device.setMouseState(1, -1, True, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
-    print 'report    interface 1:', hexdump(report_ep2)
+    print('report    interface 1:', hexdump(report_ep2))
     try:
         device.readEP(2, report_1_length, 63)
     except EndpointNAK:
@@ -707,7 +699,7 @@ def main():
     device.setMouseState(0, 0, False, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
-    print 'report    interface 1:', hexdump(report_ep2)
+    print('report    interface 1:', hexdump(report_ep2))
     try:
         device.readEP(2, report_1_length, 63)
     except EndpointNAK:
@@ -718,130 +710,130 @@ def main():
 
     EMPTY_KEY_REPORT = b'\x00' * 8
     MODIFIER_KEY_DICT = {
-        b'\x01'[0]: 'LCTRL',
-        b'\x02'[0]: 'LSHIFT',
-        b'\x04'[0]: 'LALT',
-        b'\x08'[0]: 'LGUI',
-        b'\x10'[0]: 'RCTRL',
-        b'\x20'[0]: 'RSHIFT',
-        b'\x40'[0]: 'RALT',
-        b'\x80'[0]: 'RGUI',
+        0x01: 'LCTRL',
+        0x02: 'LSHIFT',
+        0x04: 'LALT',
+        0x08: 'LGUI',
+        0x10: 'RCTRL',
+        0x20: 'RSHIFT',
+        0x40: 'RALT',
+        0x80: 'RGUI',
     }
     KEY_DICT = {
-        b'\x01'[0]: '(rollover)',
-        b'\x04'[0]: 'A',
-        b'\x05'[0]: 'B',
-        b'\x06'[0]: 'C',
-        b'\x07'[0]: 'D',
-        b'\x08'[0]: 'E',
-        b'\x09'[0]: 'F',
-        b'\x0a'[0]: 'G',
-        b'\x0b'[0]: 'H',
-        b'\x0c'[0]: 'I',
-        b'\x0d'[0]: 'J',
-        b'\x0e'[0]: 'K',
-        b'\x0f'[0]: 'L',
-        b'\x10'[0]: 'M',
-        b'\x11'[0]: 'N',
-        b'\x12'[0]: 'O',
-        b'\x13'[0]: 'P',
-        b'\x14'[0]: 'Q',
-        b'\x15'[0]: 'R',
-        b'\x16'[0]: 'S',
-        b'\x17'[0]: 'T',
-        b'\x18'[0]: 'U',
-        b'\x19'[0]: 'V',
-        b'\x1a'[0]: 'W',
-        b'\x1b'[0]: 'X',
-        b'\x1c'[0]: 'Y',
-        b'\x1d'[0]: 'Z',
-        b'\x1e'[0]: '1',
-        b'\x1f'[0]: '2',
-        b'\x20'[0]: '3',
-        b'\x21'[0]: '4',
-        b'\x22'[0]: '5',
-        b'\x23'[0]: '6',
-        b'\x24'[0]: '7',
-        b'\x25'[0]: '8',
-        b'\x26'[0]: '9',
-        b'\x27'[0]: '0',
-        b'\x28'[0]: 'RETURN',
-        b'\x29'[0]: 'ESCAPE',
-        b'\x2a'[0]: 'BACKSPACE',
-        b'\x2b'[0]: 'TAB',
-        b'\x2c'[0]: 'SPACE',
-        b'\x2d'[0]: 'MINUS',
-        b'\x2e'[0]: 'EQUALS',
-        b'\x2f'[0]: 'LEFTBRACKET',
-        b'\x30'[0]: 'RIGHTBRACKET',
-        b'\x31'[0]: 'BACKSLASH',
-        b'\x32'[0]: 'NONUSHASH',
-        b'\x33'[0]: 'SEMICOLON',
-        b'\x34'[0]: 'APOSTROPHE',
-        b'\x35'[0]: 'GRAVE',
-        b'\x36'[0]: 'COMMA',
-        b'\x37'[0]: 'PERIOD',
-        b'\x38'[0]: 'SLASH',
-        b'\x39'[0]: 'CAPSLOCK',
-        b'\x3a'[0]: 'F1',
-        b'\x3b'[0]: 'F2',
-        b'\x3c'[0]: 'F3',
-        b'\x3d'[0]: 'F4',
-        b'\x3e'[0]: 'F5',
-        b'\x3f'[0]: 'F6',
-        b'\x40'[0]: 'F7',
-        b'\x41'[0]: 'F8',
-        b'\x42'[0]: 'F9',
-        b'\x43'[0]: 'F10',
-        b'\x44'[0]: 'F11',
-        b'\x45'[0]: 'F12',
-        b'\x46'[0]: 'PRINTSCREEN',
-        b'\x48'[0]: 'PAUSE',
-        b'\x49'[0]: 'INSERT',
-        b'\x4a'[0]: 'HOME',
-        b'\x4b'[0]: 'PAGEUP',
-        b'\x4c'[0]: 'DELETE',
-        b'\x4d'[0]: 'END',
-        b'\x4e'[0]: 'PAGEDOWN',
-        b'\x4f'[0]: 'RIGHT',
-        b'\x50'[0]: 'LEFT',
-        b'\x51'[0]: 'DOWN',
-        b'\x52'[0]: 'UP',
-        b'\x64'[0]: 'NONUSBACKSLASH',
-        b'\x87'[0]: 'INTERNATIONAL1',
-        b'\x88'[0]: 'INTERNATIONAL2',
-        b'\x89'[0]: 'INTERNATIONAL3',
-        b'\x8a'[0]: 'INTERNATIONAL4',
-        b'\x8b'[0]: 'INTERNATIONAL5',
-        b'\xd0'[0]: 'KP_MEMSTORE',
-        b'\xd2'[0]: 'KP_MEMCLEAR',
-        b'\xd4'[0]: 'KP_MEMSUBTRACT',
+        0x01: '(rollover)',
+        0x04: 'A',
+        0x05: 'B',
+        0x06: 'C',
+        0x07: 'D',
+        0x08: 'E',
+        0x09: 'F',
+        0x0a: 'G',
+        0x0b: 'H',
+        0x0c: 'I',
+        0x0d: 'J',
+        0x0e: 'K',
+        0x0f: 'L',
+        0x10: 'M',
+        0x11: 'N',
+        0x12: 'O',
+        0x13: 'P',
+        0x14: 'Q',
+        0x15: 'R',
+        0x16: 'S',
+        0x17: 'T',
+        0x18: 'U',
+        0x19: 'V',
+        0x1a: 'W',
+        0x1b: 'X',
+        0x1c: 'Y',
+        0x1d: 'Z',
+        0x1e: '1',
+        0x1f: '2',
+        0x20: '3',
+        0x21: '4',
+        0x22: '5',
+        0x23: '6',
+        0x24: '7',
+        0x25: '8',
+        0x26: '9',
+        0x27: '0',
+        0x28: 'RETURN',
+        0x29: 'ESCAPE',
+        0x2a: 'BACKSPACE',
+        0x2b: 'TAB',
+        0x2c: 'SPACE',
+        0x2d: 'MINUS',
+        0x2e: 'EQUALS',
+        0x2f: 'LEFTBRACKET',
+        0x30: 'RIGHTBRACKET',
+        0x31: 'BACKSLASH',
+        0x32: 'NONUSHASH',
+        0x33: 'SEMICOLON',
+        0x34: 'APOSTROPHE',
+        0x35: 'GRAVE',
+        0x36: 'COMMA',
+        0x37: 'PERIOD',
+        0x38: 'SLASH',
+        0x39: 'CAPSLOCK',
+        0x3a: 'F1',
+        0x3b: 'F2',
+        0x3c: 'F3',
+        0x3d: 'F4',
+        0x3e: 'F5',
+        0x3f: 'F6',
+        0x40: 'F7',
+        0x41: 'F8',
+        0x42: 'F9',
+        0x43: 'F10',
+        0x44: 'F11',
+        0x45: 'F12',
+        0x46: 'PRINTSCREEN',
+        0x48: 'PAUSE',
+        0x49: 'INSERT',
+        0x4a: 'HOME',
+        0x4b: 'PAGEUP',
+        0x4c: 'DELETE',
+        0x4d: 'END',
+        0x4e: 'PAGEDOWN',
+        0x4f: 'RIGHT',
+        0x50: 'LEFT',
+        0x51: 'DOWN',
+        0x52: 'UP',
+        0x64: 'NONUSBACKSLASH',
+        0x87: 'INTERNATIONAL1',
+        0x88: 'INTERNATIONAL2',
+        0x89: 'INTERNATIONAL3',
+        0x8a: 'INTERNATIONAL4',
+        0x8b: 'INTERNATIONAL5',
+        0xd0: 'KP_MEMSTORE',
+        0xd2: 'KP_MEMCLEAR',
+        0xd4: 'KP_MEMSUBTRACT',
     }
 
-    for y in xrange(16):
-        for x in xrange(8):
+    for y in range(16):
+        for x in range(8):
             device.pressKey(y, x)
             report = device.readEP(1, report_0_length, 63, timeout=500)
             sleep(1)
-            assert report[1] == b'\x00'[0], hexdump(report)
+            assert report[1] == 0x00, hexdump(report)
             assert report[3:] == b'\x00' * 5, hexdump(report)
-            if byte_ord(report[0]):
-                assert not byte_ord(report[2])
-                print '%14s' % MODIFIER_KEY_DICT[report[0]],
+            if report[0]:
+                assert not report[2]
+                print('%14s' % MODIFIER_KEY_DICT[report[0]], end=' ')
             else:
-                print '%14s' % KEY_DICT.get(report[2], '(none)'),
+                print('%14s' % KEY_DICT.get(report[2], '(none)'), end=' ')
             device.releaseKey(y, x)
             report = device.readEP(1, report_0_length, 63, timeout=500)
             sleep(1)
             assert report == EMPTY_KEY_REPORT, hexdump(report)
-        print
+        print()
     device.pressKey(13, 1) # LCTRL
     device.readEP(1, report_0_length, 63, timeout=500)
     sleep(1)
     device.pressKey(4, 5) # C
     report = device.readEP(1, report_0_length, 63, timeout=500)
     sleep(1)
-    print hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)')
+    print(hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)'))
     return
     device.trace = True
     while True:

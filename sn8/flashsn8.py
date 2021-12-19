@@ -18,7 +18,7 @@
 FOR INTERACTIVE USE ONLY !
 This is not a python module, do not import it - run it.
 """
-from __future__ import print_function, division
+
 import argparse
 import contextlib
 import struct
@@ -110,16 +110,8 @@ def getCandidateDeviceList(usb, bus_address, vid_pid_list):
             candidate_list.append(device)
     return candidate_list
 
-try:
-    _ = ord(b'\x00'[0])
-except TypeError:
-    # Python 3
-    byte_ord = lambda x: x
-else:
-    byte_ord = ord
-
 def hexdump(value):
-    return ' '.join('%02x' % byte_ord(x) for x in value)
+    return ' '.join('%02x' % x for x in value)
 
 def send(device, data):
     assert len(data) == 8
@@ -133,6 +125,7 @@ def send(device, data):
     )
 
 def no_send(device, data):
+    _ = device # silence pylint
     print('NOT sending ' + hexdump(data))
 
 def recv(device, expected):
@@ -149,6 +142,7 @@ def recv(device, expected):
     return result
 
 def no_recv(device, expected):
+    _ = device # silence pylint
     print('NOT receiving ' + hexdump(expected))
 
 def switchToFlasher(device):
@@ -338,7 +332,7 @@ def main():
     assert len(image) / 8 == 0x9fe
     all_programmed_expected_checksum = (
         FIRST_8_WORDS_CHECKSUM
-        + sum(byte_ord(x) for x in image)
+        + sum(image)
     ) & 0xffff
     with usb1.USBContext() as usb:
         device_list = getCandidateDeviceList(
@@ -346,7 +340,7 @@ def main():
             bus_address=args.single,
             vid_pid_list=args.device,
         )
-        try:
+        try: # pylint: disable=unbalanced-tuple-unpacking
             device, = device_list
         except ValueError:
             parser.error(
@@ -388,7 +382,7 @@ def main():
             # XXX: will detach kernel driver in order to be allowed access to
             # EP0. This means the keyboard (if booted in keyboard mode) will
             # not be usable. Warn user ? Look for another active keyboard ?
-            for interface in xrange(len(device[active_configuration - 1])):
+            for interface in range(len(device[active_configuration - 1])):
                 try:
                     device_handle.detachKernelDriver(interface)
                 except usb1.USBErrorNotFound:
@@ -464,7 +458,6 @@ def main():
             )
             with timer('Re-erasing to avoid a brick...'):
                 erase(device_handle, 0, ERASABLE_PAGE_COUNT)
-                pass
         print('Success !')
         reboot(device_handle)
 

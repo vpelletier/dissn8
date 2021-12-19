@@ -14,9 +14,9 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from __future__ import absolute_import
 from functools import partial
 import os.path
+import pdb
 from struct import unpack
 import warnings
 from .libsn8 import parseConfig
@@ -24,33 +24,22 @@ from .dissn8 import systematic
 
 CONFIG_DIR = os.path.dirname(__file__)
 
-try:
-    _ = ord(b'\x00'[0])
-except TypeError:
-    # Python 3
-    byte_ord = lambda x: x
-else:
-    byte_ord = ord
-
 class CPUHalted(Exception):
     """
     Raised when trying to step CPU but it is currently halted.
     """
-    pass
 
 class EndpointStall(Exception):
     """
     Endpoint signals an error.
     """
-    pass
 
 class EndpointNAK(Exception):
     """
     Endpoint has no space for data (OUT) or no data available (IN).
     """
-    pass
 
-class ByteProperty(object):
+class ByteProperty:
     def __init__(self, address):
         self.address = address
 
@@ -63,7 +52,7 @@ class ByteProperty(object):
         assert value == (value & 0xff), repr(value)
         instance.write(self.address, value)
 
-class BitProperty(object):
+class BitProperty:
     def __init__(self, address, bit):
         self.address = address
         self.bit = bit
@@ -100,7 +89,7 @@ REGISTERS_RESET_VALUE_LIST = (
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # 0xf0
 )
 
-class MainSeriesPort(object):
+class MainSeriesPort:
     """
     I2C port, under another name.
     """
@@ -146,17 +135,17 @@ class MainSeriesPort(object):
     def writeMode2(self, value):
         raise NotImplementedError
 
-class USB(object):
+class USB:
     def __init__(self, cpu, irq_name, ien_name):
         self.cpu = cpu
         self.irq_name = irq_name
         self.ien_name = ien_name
         self.next_sof_time = 0
-        self.on_wake_signaling = None
-        self.on_enable_change = None
-        self.on_ep_enable_change = None
-        self.on_ep_event_available = None
-        self.on_setup_read = None
+        self.on_wake_signaling = lambda: None
+        self.on_enable_change = lambda state: None
+        self.on_ep_enable_change = lambda endpoint, state: None
+        self.on_ep_event_available = lambda endpoint, stall, ack: None
+        self.on_setup_read = lambda: None
         self.reset()
 
     def __repr__(self):
@@ -213,7 +202,7 @@ class USB(object):
         return self.status
 
     def writeStatus(self, value):
-        if self.on_setup_read is not None and not value & 0x04:
+        if value & 0x04 == 0:
             self.on_setup_read()
         self.status = (self.status & 0x18) | (value & 0xe7)
 
@@ -221,10 +210,7 @@ class USB(object):
         return self.address
 
     def writeAddress(self, value):
-        if (
-            self.on_enable_change is not None and
-            (self.address & 0x80) != (value & 0x80)
-        ):
+        if (self.address & 0x80) != (value & 0x80):
             self.on_enable_change(bool(value & 0x80))
         self.address = value
 
@@ -269,13 +255,11 @@ class USB(object):
 
     def _onWriteEPxEnable(self, endpoint, current_value, new_value):
         if (
-            self.on_ep_enable_change is not None and
             endpoint != 0 and
             (new_value & 0x80) != (current_value & 0x80)
         ):
             self.on_ep_enable_change(endpoint, bool(new_value & 0x80))
         if (
-            self.on_ep_event_available is not None and
             (new_value & 0x60) and
             (new_value & 0x60) != (current_value & 0x60)
         ):
@@ -310,7 +294,6 @@ class USB(object):
         cpu_time = cpu.run_time
         if (
             self.device_se0_start_time is not None and
-            self.on_wake_signaling is not None and
             cpu_time - self.device_se0_start_time > 1 # Wake signaling to host after 1ms
         ):
             self.on_wake_signaling()
@@ -422,7 +405,7 @@ class USB(object):
         if length > stop - start:
             raise ValueError('Data too long for endpoint buffer')
         for index, value in enumerate(data, start):
-            self.epbuf[index] = byte_ord(value)
+            self.epbuf[index] = value
         if endpoint == 0:
             cpu.FUE0M0 = 0
             cpu.EP0OUT_CNT = length
@@ -463,10 +446,7 @@ class USB(object):
             )[endpoint],
             stop - start,
         )
-        result = b''.join(
-            chr(x)
-            for x in self.epbuf[start:start + length]
-        )
+        result = bytes(self.epbuf[start:start + length])
         # XXX: FEP?_ACK only for INT transfers ?
         if endpoint == 0:
             cpu.FUE0M0 = 0
@@ -595,7 +575,7 @@ class USB(object):
     def drive_data_minus(self):
         return bool(self.drive & 0x01)
 
-class UART(object):
+class UART:
     def __init__(self, cpu, rx_irq_name, rx_ien_name, tx_irq_name, tx_ien_name):
         self.cpu = cpu
         self.rx_irq_name = rx_irq_name
@@ -625,7 +605,7 @@ class UART(object):
     def readRXD2(self):
         raise NotImplementedError
 
-class AnalogToDigitalConverter(object):
+class AnalogToDigitalConverter:
     def __init__(self, cpu, irq_name, ien_name):
         self.cpu = cpu
         self.irq_name = irq_name
@@ -657,7 +637,7 @@ class AnalogToDigitalConverter(object):
         raise NotImplementedError
 
 INF = float('inf')
-class Port(object):
+class Port:
     # TODO: wakeup, open-drain
     def __init__(self, chip, vdd, source_current, sink_current, pull_up, pin_count):
         self.chip = chip
@@ -756,7 +736,7 @@ class Port(object):
     def writePullUp(self, value):
         self.pull_up = value
 
-class Watchdog(object):
+class Watchdog:
     def __init__(self, cpu):
         self.cpu = cpu
         self.reset()
@@ -791,7 +771,7 @@ class Watchdog(object):
         else:
             warnings.warn('Bad value written to watchdog: %#04x' % (value, ))
 
-class Timer(object):
+class Timer:
     def __init__(self, cpu, counter_mask, irq_name, ien_name, mode_mask=0xf0, can_wake=True):
         self.cpu = cpu
         self.counter_mask = counter_mask
@@ -888,15 +868,15 @@ class Timer(object):
 
 class TimerCounter(Timer):
     def __init__(self, cpu, irq_name, ien_name):
-        super(TimerCounter, self).__init__(cpu, 0xff, irq_name, ien_name, 0xff, False)
+        super().__init__(cpu, 0xff, irq_name, ien_name, 0xff, False)
 
-class SN8(object):
+class SN8:
     def __init__(self, flash_file):
         self.ram = ram = [None] * 0x300
         self.push_buf = (None, None)
         self.flash = [
             unpack('<H', flash_file.read(2))[0]
-            for _ in xrange(0x3000)
+            for _ in range(0x3000)
         ]
         # TODO: update on rom write
         self.disassembly = systematic(dict(enumerate(self.flash)))
@@ -1104,7 +1084,7 @@ class SN8(object):
                         self.ram[self.addressOf('STK7H') + x * 2] << 8
                     ) | self.ram[self.addressOf('STK7L') + x * 2]
                 )
-                for x in xrange(7, self.STKP & 0x7f, -1)
+                for x in range(7, self.STKP & 0x7f, -1)
             ),
         )
 
@@ -1125,8 +1105,8 @@ class SN8(object):
             return
         pc = self.pc
         if pc in self.breakpoint_set:
-            print 'bp %#06x %r' % (pc, self)
-            import pdb; pdb.set_trace()
+            print('bp %#06x %r' % (pc, self))
+            pdb.set_trace()
         instruction = self.flash[pc]
         if instruction in self._no_operand_instruction_dict:
             self._no_operand_instruction_dict[instruction]()
@@ -1176,7 +1156,7 @@ class SN8(object):
                 raise ValueError(
                     'Firmware is trying to write register area to flash.',
                 )
-            for index in xrange(word_count):
+            for index in range(word_count):
                 ram_index = index * 2
                 self.flash[base_address + index] = (
                     self.read(ram_index + 1) << 8
@@ -1184,7 +1164,7 @@ class SN8(object):
             self.run_time += 2 # 1~2ms to write a page
         else: # Erase
             base_address &= ~0x7f
-            for address in xrange(
+            for address in range(
                 base_address,
                 base_address + 0x80,
             ):
@@ -1355,7 +1335,7 @@ class SN8(object):
             device_list = (self.t0, self.t1, self.tc0, self.tc1, self.tc2)
             self.cycle_count += 1
             # USB runs only in fast mode
-            if not (oscm & 0x04):
+            if oscm & 0x04 == 0:
                 device_list += (self.usb, )
         if oscm & 0x04:
             # Slow clock source
@@ -1718,12 +1698,15 @@ class SN8(object):
 
 def newChip(name):
     base = SN8
-    config = parseConfig([open(
-        os.path.join(CONFIG_DIR, name.lower() + '.cfg')
-    )])
+    with open(
+        os.path.join(CONFIG_DIR, name.lower() + '.cfg'),
+        'r',
+        encoding='utf-8',
+    ) as config_file:
+        config = parseConfig([config_file])
     # TODO: pull more from config, and de-hardcode from SN8
     dikt = {}
-    for address, register_name in config['ram-reserved'].iteritems():
+    for address, register_name in list(config['ram-reserved'].items()):
         assert not hasattr(base, register_name)
         assert register_name not in dikt
         if '.' in address:

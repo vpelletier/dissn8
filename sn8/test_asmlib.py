@@ -15,7 +15,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from __future__ import absolute_import
 import os.path
 import unittest
 from .test_base import SimSN8F2288TestBase
@@ -27,31 +26,31 @@ ASMLIB_DIR = os.path.normpath(
 
 class TracingBitBanging8bitsI2C(BitBanging8bitsI2C):
     def __init__(self, cpu, *args, **kw):
-        super(TracingBitBanging8bitsI2C, self).__init__(*args, **kw)
+        super().__init__(*args, **kw)
         self._cpu = cpu
 
     def reset(self):
-        super(TracingBitBanging8bitsI2C, self).reset()
+        super().reset()
         self.event_list = []
 
     def onClockEdge(self, scl, sda):
         self.event_list.append((self._cpu.run_time, 'scl', scl, sda))
-        super(TracingBitBanging8bitsI2C, self).onClockEdge(scl, sda)
+        super().onClockEdge(scl, sda)
 
     def onDataEdge(self, scl, sda):
         self.event_list.append((self._cpu.run_time, 'sda', scl, sda))
-        super(TracingBitBanging8bitsI2C, self).onDataEdge(scl, sda)
+        super().onDataEdge(scl, sda)
 
 class ASMLibTests(SimSN8F2288TestBase):
     def _getSimulator(self, *args, **kw):
-        return super(ASMLibTests, self)._getSimulator(
+        return super()._getSimulator(
             include=[ASMLIB_DIR],
             *args,
             **kw
         )
     def testWatchdog(self):
         sim = self._getSimulator(
-            u'''
+            '''
             //{{SONIX_CODE_OPTION
                 .Code_Option Fcpu "Fosc/8"
             //}}SONIX_CODE_OPTION
@@ -78,7 +77,7 @@ class ASMLibTests(SimSN8F2288TestBase):
             watchdog_reset:
                 JMP     $
             ''',
-            watchdog=u'Enable',
+            watchdog='Enable',
         )
         assert sim.ram[0] is None
         while sim.ram[0] is None:
@@ -98,7 +97,7 @@ class ASMLibTests(SimSN8F2288TestBase):
 
     def test_i2c(self):
         # XXX: does not test clock stretching
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
         //{{SONIX_CODE_OPTION
             .Code_Option Fcpu "Fosc/4"
         //}}SONIX_CODE_OPTION
@@ -165,7 +164,7 @@ class ASMLibTests(SimSN8F2288TestBase):
         def onDataByteReceived(data):
             onEvent('datw', data)
             return True
-        _getNextDataByte = iter((0x81, 0x00, 0xff, 0x5a)).next
+        _getNextDataByte = iter((0x81, 0x00, 0xff, 0x5a)).__next__
         def getNextDataByte():
             result = _getNextDataByte()
             onEvent('datr', result)
@@ -269,7 +268,7 @@ class ASMLibTests(SimSN8F2288TestBase):
                 self.assertGreaterEqual(duration, MIN_CLOCK_PERIOD)
 
     def test_power(self):
-        sim = self._getSimulator(u'''
+        sim = self._getSimulator('''
         B0BCLR  FC          ; Keep xtal running
         MOV     A, #0
         CALL    power_slow
@@ -286,8 +285,8 @@ class ASMLibTests(SimSN8F2288TestBase):
         B0MOV   0x02, A
         INCLUDE "power.asm"
         ''')
-        FAST_CYCLE_DURATION = 1./12000 # in ms
-        SLOW_CYCLE_DURATION = 2./12    # in ms
+        FAST_CYCLE_DURATION = 1. / 12000 # in ms
+        SLOW_CYCLE_DURATION = 2. / 12    # in ms
         assert sim.ram[0] is None
         while sim.ram[0] is None:
             sim.step()

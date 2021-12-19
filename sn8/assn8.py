@@ -17,14 +17,12 @@
 """
 SN8 assembler.
 """
-from __future__ import absolute_import
 import argparse
 import ast
 from collections import defaultdict
-import errno
 from io import StringIO
 import os.path
-from struct import pack
+from struct import pack, unpack
 import sys
 import traceback
 import warnings
@@ -46,8 +44,9 @@ INSTRUCTION_TOKEN = 'INSTRUCTION'
 NUMBER_TOKEN = 'NUMBER'
 STRING_TOKEN = 'STRING'
 INSTRUCTION_DICT = defaultdict(list)
-for opcode, (_, _, _, _, instruction, _, _) in opcode_dict.iteritems():
-    INSTRUCTION_DICT[instruction].append(opcode)
+for _opcode, (_, _, _, _, _instruction, _, _) in opcode_dict.items():
+    INSTRUCTION_DICT[_instruction].append(_opcode)
+del _opcode
 INSTRUCTION_DICT = dict(INSTRUCTION_DICT)
 BYTE_SELECTOR_FUNCTION_DICT = {
     'L': lambda x: x & 0xff,
@@ -70,7 +69,7 @@ AUTO_LABEL = '@@'
 AUTO_LABEL_FORWARD = '@F'
 AUTO_LABEL_BACKWARD = '@B'
 
-class ParserFrame(object):
+class ParserFrame:
     has_set_origin = False
     def __init__(self, parser, filename, address):
         self.parser = parser
@@ -88,7 +87,7 @@ class ParserFrame(object):
         self.has_set_origin = True
         self.address = address
 
-class Allocator(object):
+class Allocator:
     def __init__(self, start, stop):
         # List of uninterupted free ranges, smallest first.
         self.free_list = [[stop - start + 1, start]]
@@ -138,7 +137,7 @@ class Allocator(object):
         self.free_list.sort()
         return free_start
 
-class Assembler(object):
+class Assembler:
     tokens = (
         'CODE',
         'DATA',
@@ -253,7 +252,7 @@ class Assembler(object):
         self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
         if len(self._parser_stack) == 1:
             # Any remaining undefined label is an error.
-            undefined_identifier_list = self.label_referer_dict.keys()
+            undefined_identifier_list = list(self.label_referer_dict)
         else:
             # Only local undefined labels are an error.
             undefined_identifier_list = [
@@ -276,19 +275,21 @@ class Assembler(object):
             ))
         with open(
             os.path.join(CONFIG_DIR, production[2].lower() + '.cfg'),
+            'r',
+            encoding='utf-8',
         ) as config:
             chip = parseConfig([config])
         self.chip = chip
         # Sanity check
         if chip['chip']['name'].lower() != production[2].lower():
             raise ValueError('Inconsistent chip config file: %r' % config.name)
-        for address, mask, value_names in chip['code-option'].itervalues():
+        for address, mask, value_names in chip['code-option'].values():
             if mask == 0:
-               self.rom[address] = value_names # Actually a single value
-        for address, name in chip['rom'].iteritems():
+                self.rom[address] = value_names # Actually a single value
+        for address, name in chip['rom'].items():
             self.chip_identifier_dict[name] = Address(address)
         for _, _, _, ram_dict in chip['ram']:
-            for address, name in ram_dict.iteritems():
+            for address, name in ram_dict.items():
                 if '.' in address:
                     word_address, bit_address = address.split('.')
                     address = BitAddress(
@@ -330,7 +331,6 @@ class Assembler(object):
         emitable : include
         empty :
         '''
-        pass
 
     def p_code_option(self, production):
         '''
@@ -346,7 +346,7 @@ class Assembler(object):
             shift += 1
             mask >>= 1
         self.rom[address] |= {
-            y: x for x, y in value_names.iteritems()
+            y: x for x, y in value_names.items()
         }[production[3]] << shift
 
     def _findFile(self, include_filename):
@@ -363,7 +363,11 @@ class Assembler(object):
         include : INCLUDE STRING EOL
         '''
         try:
-            with open(self._findFile(production[2])) as infile:
+            with open(
+                self._findFile(production[2]),
+                'r',
+                encoding='utf-8',
+            ) as infile:
                 self._parse(infile)
         except Exception:
             print('Error while processing %r, included from %s:%i:' % (
@@ -391,8 +395,7 @@ class Assembler(object):
                         self.write(ord(chunk))
                     break
 
-    @staticmethod
-    def p_bit_address(production):
+    def p_bit_address(self, production):
         '''
         bit_address : address BIT_SELECTOR
         '''
@@ -420,7 +423,7 @@ class Assembler(object):
         try:
             production[0] = self.getIdentifier(production[1])
         except KeyError:
-            raise NameError(production[1])
+            raise NameError(production[1]) from None
 
     @staticmethod
     def p_passthrough(production):
@@ -430,7 +433,8 @@ class Assembler(object):
         '''
         production[0] = production[1]
 
-    def p_partial_identifier(self, production):
+    @staticmethod
+    def p_partial_identifier(production):
         '''
         address : resolved_identifier BYTE_SELECTOR
         operand : resolved_identifier BYTE_SELECTOR
@@ -619,10 +623,11 @@ class Assembler(object):
             if identifier == AUTO_LABEL_BACKWARD:
                 # Backward references must always be immediately resolvable.
                 # Otherwise a "@@" label is missing.
-                raise exception
+                raise exception from None
             production[0] = exception
 
-    def p_operand_immediate_identifier(self, production):
+    @staticmethod
+    def p_operand_immediate_identifier(production):
         '''
         operand : '#' address
         '''
@@ -693,11 +698,11 @@ class Assembler(object):
                 print('Left %r' % source_file)
         if parent_frame is not None:
             parent_frame.address = frame.address_until_origin
-            for key, value in frame.label_referer_dict.iteritems():
+            for key, value in frame.label_referer_dict.items():
                 if key.startswith('_'):
                     continue
                 parent_frame.label_referer_dict[key].extend(value)
-            for key, value in frame.identifier_dict.iteritems():
+            for key, value in frame.identifier_dict.items():
                 if key.startswith('_'):
                     # Do not export symbols starting with an underscore.
                     continue
@@ -788,7 +793,7 @@ class Assembler(object):
                 self.filename,
                 lineno,
                 name,
-            ))
+            )) from None
         for opcode in opcode_list:
             mask, space, _, _, _, left_type, right_type = opcode_dict[opcode]
             if space is ROM_SPACE and isinstance(left, NameError):
@@ -800,12 +805,14 @@ class Assembler(object):
                 # ... and use placeholder
                 left = Address(0)
             if space in (RAM_SPACE, ZRO_SPACE):
+                # pylint: disable=raising-non-exception
                 if isinstance(left, NameError):
                     raise left
                 if isinstance(right, NameError):
                     raise right
-            left_is_fixed = isinstance(left_type, basestring)
-            right_is_fixed = isinstance(right_type, basestring)
+                # pylint: enable=raising-non-exception
+            left_is_fixed = isinstance(left_type, str)
+            right_is_fixed = isinstance(right_type, str)
             if (
                 left_is_fixed and left == self.getIdentifier(left_type) or
                 not left_is_fixed and isinstance(left, left_type)
@@ -863,7 +870,7 @@ def assemble(source, include=None, debug=False):
     ).rom.get
     return b''.join(
         pack('<H', getRomWord(x, 0))
-        for x in xrange(0x3000)
+        for x in range(0x3000)
     )
 
 def main():
@@ -878,6 +885,7 @@ def main():
     parser.add_argument(
         '-I',
         '--include',
+        default=[],
         nargs='+',
         action='append',
         help='Inclusion path(s)',
@@ -902,7 +910,7 @@ def main():
         )
     with args.output as outfile:
         write = outfile.write
-        for address in xrange(0x3000):
+        for address in range(0x3000):
             write(pack('<H', assembler.rom.get(address, 0)))
 
 if __name__ == '__main__':
