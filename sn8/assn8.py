@@ -38,7 +38,7 @@ from ply.lex import lex
 from .libsn8 import (
     opcode_dict,
     BitAddress, Address, Immediate, NoOperand,
-    ZRO_SPACE, RAM_SPACE, ROM_SPACE,
+    NUL_SPACE, ZRO_SPACE, RAM_SPACE, ROM_SPACE, IMM_SPACE,
     parseConfig,
 )
 
@@ -46,12 +46,23 @@ __all__ = ('assemble', )
 
 CONFIG_DIR = os.path.dirname(__file__)
 
+def _sortOpcode(x):
+    return {
+        # Spaces that can fixup labels need to be first
+        ROM_SPACE: 0, 
+        IMM_SPACE: 1,
+        # Other spaces
+        ZRO_SPACE: 2,
+        RAM_SPACE: 3,
+        NUL_SPACE: 4,
+    }[x[1][1]]
+
 MARKER = object()
 INSTRUCTION_TOKEN = 'INSTRUCTION'
 NUMBER_TOKEN = 'NUMBER'
 STRING_TOKEN = 'STRING'
 INSTRUCTION_DICT = defaultdict(list)
-for opcode, (_, _, _, _, instruction, _, _) in list(opcode_dict.items()):
+for opcode, (_, _, _, _, instruction, _, _) in sorted(opcode_dict.items(), key=_sortOpcode):
     INSTRUCTION_DICT[instruction].append(opcode)
 INSTRUCTION_DICT = dict(INSTRUCTION_DICT)
 BYTE_SELECTOR_FUNCTION_DICT = {
@@ -74,6 +85,25 @@ NO_OPERAND = NoOperand()
 AUTO_LABEL = '@@'
 AUTO_LABEL_FORWARD = '@F'
 AUTO_LABEL_BACKWARD = '@B'
+
+class Fixup(object):
+    
+    def __init__(self, referrer, selector=None):
+        self.referrer = referrer
+        self.selector = selector
+
+    def apply(self, address):
+        value = self.selector(address)
+        return value
+
+class FixupError(NameError):
+
+    def __init__(self, *args, selector=None):
+        super().__init__(*args)
+        self.selector = selector
+
+    def fixup(self, referrer):
+        return Fixup(referrer, self.selector)
 
 class ParserFrame(object):
     has_set_origin = False
@@ -422,10 +452,23 @@ class Assembler(object):
         '''
         resolved_identifier : IDENTIFIER
         '''
+        identifier = production[1]
         try:
-            production[0] = self.getIdentifier(production[1])
+            production[0] = self.getIdentifier(identifier)
         except KeyError:
-            raise NameError(production[1])
+            exception = NameError(
+                '%s:%i: Undefined identifier: %r' % (
+                    self.filename,
+                    production.lineno(1),
+                    identifier,
+                ),
+                identifier,
+            )
+            if identifier == AUTO_LABEL_BACKWARD:
+                # Backward references must always be immediately resolvable.
+                # Otherwise a "@@" label is missing.
+                raise exception
+            production[0] = exception
 
     @staticmethod
     def p_passthrough(production):
@@ -441,9 +484,13 @@ class Assembler(object):
         operand : resolved_identifier BYTE_SELECTOR
         '''
         value = production[1]
+        byte_selector = production[2]
         if isinstance(value, BitAddress):
             raise TypeError('Cannot select a byte from a bit address.')
-        production[0] = Address(production[2](value.value))
+        if isinstance(value, NameError):
+            production[0] = FixupError(*value.args, selector=byte_selector)
+        else:
+            production[0] = Address(byte_selector(value.value))
 
     def p_declaration_address(self, production):
         '''
@@ -524,8 +571,8 @@ class Assembler(object):
 
     def _resolveLabel(self, name, address):
         assert address & 0x3fff == address
-        for referrer in self.label_referer_dict.pop(name, ()):
-            self.rom[referrer] |= address
+        for fixup in self.label_referer_dict.pop(name, ()):
+            self.rom[fixup.referrer] |= fixup.apply(address)
 
     def p_emitable_db(self, production):
         '''
@@ -632,6 +679,9 @@ class Assembler(object):
         operand : '#' address
         '''
         address = production[2]
+        if isinstance(address, FixupError):
+            production[0] = address
+            return
         if not isinstance(address, Address):
             raise TypeError('Wrong identifier type for immediate')
         production[0] = Immediate(address.value)
@@ -801,9 +851,16 @@ class Assembler(object):
                 # Mask sanity check
                 assert mask == 0x3fff
                 # Remember address for label...
-                self.label_referer_dict[left.args[1]].append(self.address)
+                self.label_referer_dict[left.args[1]].append(
+                        Fixup(self.address, selector=lambda x: x & mask))
                 # ... and use placeholder
                 left = Address(0)
+            if space is IMM_SPACE and isinstance(right, FixupError):
+                # MOV with immediate address$M or address$L
+                # Remember address for label...
+                self.label_referer_dict[right.args[1]].append(right.fixup(self.address))
+                # ... and use placeholder
+                right = Immediate(0)
             if space in (RAM_SPACE, ZRO_SPACE):
                 if isinstance(left, NameError):
                     raise left
