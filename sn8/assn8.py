@@ -168,7 +168,7 @@ class Assembler(object):
     @staticmethod
     def t_BYTE_SELECTOR(token):
         r'''\$[HML]'''
-        # Note: must be declare above t_RELATIVE_ADDRESS to have precedence.
+        # Note: must be declared above t_RELATIVE_ADDRESS to have precedence.
         token.value = BYTE_SELECTOR_FUNCTION_DICT[token.value[1]]
         return token
 
@@ -440,14 +440,14 @@ class Assembler(object):
             raise TypeError('Cannot select a byte from a bit address.')
         production[0] = Address(production[2](value.value))
 
-    def p_declaration_address(self, production):
+    def p_declare_address(self, production):
         '''
         declaration : IDENTIFIER EQU address EOL
                     | IDENTIFIER EQU bit_address EOL
         '''
         self.declare(production[1], production[3])
 
-    def p_declaration_size(self, production):
+    def p_declare_size(self, production):
         '''
         declaration : IDENTIFIER DS NUMBER EOL
         '''
