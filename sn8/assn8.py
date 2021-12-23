@@ -18,6 +18,11 @@
 SN8 assembler.
 """
 from __future__ import absolute_import
+from __future__ import print_function
+from builtins import next
+from builtins import range
+from past.builtins import basestring
+from builtins import object
 import argparse
 import ast
 from collections import defaultdict
@@ -33,7 +38,7 @@ from ply.lex import lex
 from .libsn8 import (
     opcode_dict,
     BitAddress, Address, Immediate, NoOperand,
-    ZRO_SPACE, RAM_SPACE, ROM_SPACE,
+    NUL_SPACE, ZRO_SPACE, RAM_SPACE, ROM_SPACE, IMM_SPACE,
     parseConfig,
 )
 
@@ -41,12 +46,23 @@ __all__ = ('assemble', )
 
 CONFIG_DIR = os.path.dirname(__file__)
 
+def _sortOpcode(x):
+    return {
+        # Spaces that can fixup labels need to be first
+        ROM_SPACE: 0, 
+        IMM_SPACE: 1,
+        # Other spaces
+        ZRO_SPACE: 2,
+        RAM_SPACE: 3,
+        NUL_SPACE: 4,
+    }[x[1][1]]
+
 MARKER = object()
 INSTRUCTION_TOKEN = 'INSTRUCTION'
 NUMBER_TOKEN = 'NUMBER'
 STRING_TOKEN = 'STRING'
 INSTRUCTION_DICT = defaultdict(list)
-for opcode, (_, _, _, _, instruction, _, _) in opcode_dict.iteritems():
+for opcode, (_, _, _, _, instruction, _, _) in sorted(opcode_dict.items(), key=_sortOpcode):
     INSTRUCTION_DICT[instruction].append(opcode)
 INSTRUCTION_DICT = dict(INSTRUCTION_DICT)
 BYTE_SELECTOR_FUNCTION_DICT = {
@@ -69,6 +85,25 @@ NO_OPERAND = NoOperand()
 AUTO_LABEL = '@@'
 AUTO_LABEL_FORWARD = '@F'
 AUTO_LABEL_BACKWARD = '@B'
+
+class Fixup(object):
+    
+    def __init__(self, referrer, selector=None):
+        self.referrer = referrer
+        self.selector = selector
+
+    def apply(self, address):
+        value = self.selector(address)
+        return value
+
+class FixupError(NameError):
+
+    def __init__(self, *args, selector=None):
+        super().__init__(*args)
+        self.selector = selector
+
+    def fixup(self, referrer):
+        return Fixup(referrer, self.selector)
 
 class ParserFrame(object):
     has_set_origin = False
@@ -253,7 +288,7 @@ class Assembler(object):
         self.label_referer_dict.pop(AUTO_LABEL_BACKWARD, None)
         if len(self._parser_stack) == 1:
             # Any remaining undefined label is an error.
-            undefined_identifier_list = self.label_referer_dict.keys()
+            undefined_identifier_list = list(self.label_referer_dict.keys())
         else:
             # Only local undefined labels are an error.
             undefined_identifier_list = [
@@ -282,13 +317,13 @@ class Assembler(object):
         # Sanity check
         if chip['chip']['name'].lower() != production[2].lower():
             raise ValueError('Inconsistent chip config file: %r' % config.name)
-        for address, mask, value_names in chip['code-option'].itervalues():
+        for address, mask, value_names in list(chip['code-option'].values()):
             if mask == 0:
                self.rom[address] = value_names # Actually a single value
-        for address, name in chip['rom'].iteritems():
+        for address, name in list(chip['rom'].items()):
             self.chip_identifier_dict[name] = Address(address)
         for _, _, _, ram_dict in chip['ram']:
-            for address, name in ram_dict.iteritems():
+            for address, name in list(ram_dict.items()):
                 if '.' in address:
                     word_address, bit_address = address.split('.')
                     address = BitAddress(
@@ -346,7 +381,7 @@ class Assembler(object):
             shift += 1
             mask >>= 1
         self.rom[address] |= {
-            y: x for x, y in value_names.iteritems()
+            y: x for x, y in list(value_names.items())
         }[production[3]] << shift
 
     def _findFile(self, include_filename):
@@ -417,10 +452,23 @@ class Assembler(object):
         '''
         resolved_identifier : IDENTIFIER
         '''
+        identifier = production[1]
         try:
-            production[0] = self.getIdentifier(production[1])
+            production[0] = self.getIdentifier(identifier)
         except KeyError:
-            raise NameError(production[1])
+            exception = NameError(
+                '%s:%i: Undefined identifier: %r' % (
+                    self.filename,
+                    production.lineno(1),
+                    identifier,
+                ),
+                identifier,
+            )
+            if identifier == AUTO_LABEL_BACKWARD:
+                # Backward references must always be immediately resolvable.
+                # Otherwise a "@@" label is missing.
+                raise exception
+            production[0] = exception
 
     @staticmethod
     def p_passthrough(production):
@@ -436,9 +484,13 @@ class Assembler(object):
         operand : resolved_identifier BYTE_SELECTOR
         '''
         value = production[1]
+        byte_selector = production[2]
         if isinstance(value, BitAddress):
             raise TypeError('Cannot select a byte from a bit address.')
-        production[0] = Address(production[2](value.value))
+        if isinstance(value, NameError):
+            production[0] = FixupError(*value.args, selector=byte_selector)
+        else:
+            production[0] = Address(byte_selector(value.value))
 
     def p_declare_address(self, production):
         '''
@@ -519,8 +571,8 @@ class Assembler(object):
 
     def _resolveLabel(self, name, address):
         assert address & 0x3fff == address
-        for referrer in self.label_referer_dict.pop(name, ()):
-            self.rom[referrer] |= address
+        for fixup in self.label_referer_dict.pop(name, ()):
+            self.rom[fixup.referrer] |= fixup.apply(address)
 
     def p_emitable_db(self, production):
         '''
@@ -627,6 +679,9 @@ class Assembler(object):
         operand : '#' address
         '''
         address = production[2]
+        if isinstance(address, FixupError):
+            production[0] = address
+            return
         if not isinstance(address, Address):
             raise TypeError('Wrong identifier type for immediate')
         production[0] = Immediate(address.value)
@@ -693,11 +748,11 @@ class Assembler(object):
                 print('Left %r' % source_file)
         if parent_frame is not None:
             parent_frame.address = frame.address_until_origin
-            for key, value in frame.label_referer_dict.iteritems():
+            for key, value in list(frame.label_referer_dict.items()):
                 if key.startswith('_'):
                     continue
                 parent_frame.label_referer_dict[key].extend(value)
-            for key, value in frame.identifier_dict.iteritems():
+            for key, value in list(frame.identifier_dict.items()):
                 if key.startswith('_'):
                     # Do not export symbols starting with an underscore.
                     continue
@@ -796,9 +851,16 @@ class Assembler(object):
                 # Mask sanity check
                 assert mask == 0x3fff
                 # Remember address for label...
-                self.label_referer_dict[left.args[1]].append(self.address)
+                self.label_referer_dict[left.args[1]].append(
+                        Fixup(self.address, selector=lambda x: x & mask))
                 # ... and use placeholder
                 left = Address(0)
+            if space is IMM_SPACE and isinstance(right, FixupError):
+                # MOV with immediate address$M or address$L
+                # Remember address for label...
+                self.label_referer_dict[right.args[1]].append(right.fixup(self.address))
+                # ... and use placeholder
+                right = Immediate(0)
             if space in (RAM_SPACE, ZRO_SPACE):
                 if isinstance(left, NameError):
                     raise left
@@ -863,7 +925,7 @@ def assemble(source, include=None, debug=False):
     ).rom.get
     return b''.join(
         pack('<H', getRomWord(x, 0))
-        for x in xrange(0x3000)
+        for x in range(0x3000)
     )
 
 def main():
@@ -902,7 +964,7 @@ def main():
         )
     with args.output as outfile:
         write = outfile.write
-        for address in xrange(0x3000):
+        for address in range(0x3000):
             write(pack('<H', assembler.rom.get(address, 0)))
 
 if __name__ == '__main__':

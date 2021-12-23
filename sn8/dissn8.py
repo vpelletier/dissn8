@@ -15,6 +15,9 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 from __future__ import print_function, absolute_import
+from builtins import chr
+from builtins import range
+from past.builtins import basestring
 import argparse
 from collections import defaultdict
 import itertools
@@ -114,7 +117,7 @@ def disassemble(address, instruction, function):
                     range_symbol, range_bit_dict = ram_symbol_dict[operand]
                     if symbol is None:
                         symbol = range_symbol
-                    for bit_address, bit_symbol in range_bit_dict.iteritems():
+                    for bit_address, bit_symbol in range_bit_dict.items():
                         bit_dict.setdefault(bit_address, bit_symbol)
             operand_fmt = '0x%02x'
             if is_bit:
@@ -162,7 +165,7 @@ def disassemble(address, instruction, function):
 
 def systematic(rom):
     disassembled = {}
-    for address, instruction in rom.iteritems():
+    for address, instruction in rom.items():
         try:
             opcode = disassemble(address, instruction, None)
         except KeyError:
@@ -227,17 +230,17 @@ def walker(rom):
     data_chunk_dict = defaultdict(list)
     next_address = None
     current_chunk = None
-    for address, value in sorted(rom.iteritems()):
+    for address, value in sorted(rom.items()):
         if address != next_address:
             current_chunk = data_chunk_dict[address]
         next_address = address + 1
         current_chunk.append(value)
-    for chunk_address, value_list in data_chunk_dict.iteritems():
+    for chunk_address, value_list in data_chunk_dict.items():
         for count, value in [
                     (len(list(g)), k) for k, g in itertools.groupby(value_list)
                 ]:
             if value or count < 7:
-                for offset in xrange(count):
+                for offset in range(count):
                     disassembled[chunk_address + offset] = (
                         'DW\t0x%04x\t; %s%s' % (
                             value,
@@ -304,7 +307,7 @@ def main():
     for ram_range_symbol_entry in chip['ram']:
         _, _, _, ram_symbol_dict = ram_range_symbol_entry
         ram_range_symbol_entry[3] = new_ram_symbol_dict = {}
-        for address, name in ram_symbol_dict.iteritems():
+        for address, name in ram_symbol_dict.items():
             if name:
                 if reverse_dict.get(name, address) != address:
                     raise ValueError(
@@ -340,8 +343,8 @@ def main():
     write('CHIP\t' + chip['chip']['name'] + '\n')
     function_addr_name_dict = chip['callee']
     line_ownership_dict.update(function_addr_name_dict)
-    function_dict.update((y, x) for x, y in function_addr_name_dict.iteritems())
-    entry_stack.extend(line_ownership_dict.iteritems())
+    function_dict.update((y, x) for x, y in function_addr_name_dict.items())
+    entry_stack.extend(iter(line_ownership_dict.items()))
     comment_dict = chip['comment']
     for reserved in rom_reserved_set:
         comment_dict.setdefault(reserved, 'Reserved')
@@ -349,7 +352,7 @@ def main():
     if args.skip_header:
         read(88)
     rom = {}
-    for address in xrange(
+    for address in range(
         chip['chip']['rom_start'],
         chip['chip']['rom_stop'] + 1,
     ):
@@ -360,7 +363,7 @@ def main():
     if read(1):
         print('Ignoring data past end of ROM')
     write('//{{SONIX_CODE_OPTION\n')
-    for option_name, (address, mask, value_names) in chip['code-option'].iteritems():
+    for option_name, (address, mask, value_names) in chip['code-option'].items():
         if mask:
             try:
                 option_value = rom[address] & mask
@@ -378,21 +381,21 @@ def main():
     disassembled_dict = method_dict[args.method](rom)
     write('.DATA\n')
     ram_reserved_name_set = {
-        x for x in chip.get('ram-reserved', {}).itervalues()
+        x for x in chip.get('ram-reserved', {}).values()
     }
-    for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.iteritems()):
+    for address, (flat_name_list, flat_bit_dict) in sorted(flat_ram_symbol_dict.items()):
         for name in flat_name_list:
             if name in ram_reserved_name_set:
                 continue
             write('%s\tEQU\t0x%02x\n' % (name, address))
-        for bit_number, bit_name_list in sorted(flat_bit_dict.iteritems()):
+        for bit_number, bit_name_list in sorted(flat_bit_dict.items()):
             for bit_name in bit_name_list:
                 if bit_name in ram_reserved_name_set:
                     continue
                 write('%s\tEQU\t0x%02x.%i\n' % (bit_name, address, bit_number))
     if ram_symbol_usage_dict:
         write('; RAM address usage\n')
-        for address, accessor_list in sorted(ram_symbol_usage_dict.iteritems()):
+        for address, accessor_list in sorted(ram_symbol_usage_dict.items()):
             write('; %s:\n' % (address, ))
             for address, mode in sorted(accessor_list):
                 write(';\t%s %s\n' % (
@@ -438,8 +441,8 @@ def main():
                 ))
                 del node_line_list[:]
                 return node_id
-            jumped_set = {x for y in jump_dict.itervalues() for x, _, _ in y}
-            for function, line_list in dot_dict.iteritems():
+            jumped_set = {x for y in jump_dict.values() for x, _, _ in y}
+            for function, line_list in dot_dict.items():
                 with open(os.path.join(dot_path, function + '.dot'), 'w') as dot_file:
                     dot_file.write('strict digraph {\nedge [fontname="Courier"]\nnode [shape="box",fontname="Courier"]\n')
                     node_line_list = []
@@ -478,7 +481,7 @@ def main():
                     dot_file.write('}\n')
         with open(os.path.join(dot_path, '_index.dot'), 'w') as dot_file:
             dot_file.write('strict digraph {\nedge [fontname="Courier"]\nnode [shape="box",fontname="Courier"]\n')
-            for callee, caller_list in caller_dict.iteritems():
+            for callee, caller_list in caller_dict.items():
                 try:
                     callee = line_ownership_dict[callee]
                 except KeyError:
@@ -531,7 +534,7 @@ def main():
     dot_write()
     if caller_dict:
         write('; Unknown calls:\n')
-        for address, caller_list in caller_dict.iteritems():
+        for address, caller_list in caller_dict.items():
             write('ORG 0x%04x\n' % address)
             write(
                 rom_symbol_dict[address] + ': ; Called from ' +
@@ -543,7 +546,7 @@ def main():
             write('\tJMP\t' + rom_symbol_dict[address] + '\n')
     if jumper_dict:
         write('; Unknown jumps:\n')
-        for address, jumper_list in jumper_dict.iteritems():
+        for address, jumper_list in jumper_dict.items():
             write('ORG 0x%04x\n' % address)
             write(
                 rom_symbol_dict[address] + ': ; Jumped from ' +

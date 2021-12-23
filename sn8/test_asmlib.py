@@ -165,7 +165,7 @@ class ASMLibTests(SimSN8F2288TestBase):
         def onDataByteReceived(data):
             onEvent('datw', data)
             return True
-        _getNextDataByte = iter((0x81, 0x00, 0xff, 0x5a)).next
+        _getNextDataByte = iter((0x81, 0x00, 0xff, 0x5a)).__next__
         def getNextDataByte():
             result = _getNextDataByte()
             onEvent('datr', result)

@@ -15,6 +15,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 from __future__ import division
+from __future__ import print_function
+from builtins import chr
+from builtins import range
+from builtins import object
 import argparse
 from collections import defaultdict
 from functools import partial
@@ -66,7 +70,7 @@ class KU1255(object):
             partial(cpu.p4.getInternalAsLoad, 6),
             partial(cpu.p4.getInternalAsLoad, 7),
         ]
-        for column in xrange(8):
+        for column in range(8):
             cpu.p1.setLoad(column, partial(self.getKeyLoad, column))
         # USB host emulation
         usb = cpu.usb
@@ -98,7 +102,7 @@ class KU1255(object):
         self._trace = value
 
     def _tracer(self):
-        print repr(self.cpu)
+        print(repr(self.cpu))
 
     def __repr__(self):
         mouse_buttons = []
@@ -142,11 +146,11 @@ class KU1255(object):
         # Key matrix
         self.row_list_by_column = [
             []
-            for x in xrange(8)
+            for x in range(8)
         ]
         self.column_list_by_row = [
             []
-            for x in xrange(len(self.matrix))
+            for x in range(len(self.matrix))
         ]
         # USB
         self.usb_is_enabled = False
@@ -244,7 +248,7 @@ class KU1255(object):
             voltage, impedance = getP1InternalLoad(load_column)
             if impedance != INF:
                 impedance_by_voltage[voltage].append(impedance)
-        for key, value in impedance_by_voltage.items():
+        for key, value in list(impedance_by_voltage.items()):
             impedance_by_voltage[key] = 1 / sum(1 / x for x in value)
         if impedance_by_voltage:
             voltage, impedance = impedance_by_voltage.popitem()
@@ -567,7 +571,7 @@ def main():
     parser.add_argument('firmware', help='Binary firmware image')
     # XXX: add save-state support ?
     args = parser.parse_args()
-    with open(args.firmware) as firmware:
+    with open(args.firmware, 'rb') as firmware:
         device = KU1255(firmware)
 
     def sleep(duration):
@@ -588,37 +592,37 @@ def main():
     # Based on linux enumeration sequence
     device_descriptor = device.getDescriptor(1, 8)
     sleep(1)
-    print 'pre-address device desc:', hexdump(device_descriptor)
+    print('pre-address device desc:', hexdump(device_descriptor))
     device.setAddress(1)
     sleep(1)
-    print 'address set'
+    print('address set')
     total_length = byte_ord(device_descriptor[0])
     device_descriptor = device.getDescriptor(1, total_length)
     sleep(1)
-    print 'full device desc:', hexdump(device_descriptor)
-    for _ in xrange(3):
+    print('full device desc:', hexdump(device_descriptor))
+    for _ in range(3):
         try:
             device_qualifier = device.getDescriptor(6, 0x0a)
         except EndpointStall:
             continue
         else:
-            print 'device qualifier:', hexdump(device_qualifier)
+            print('device qualifier:', hexdump(device_qualifier))
             break
         finally:
             sleep(1)
     config_descriptor_head = device.getDescriptor(2, 9)
     sleep(1)
-    print 'config desc head:', hexdump(config_descriptor_head)
+    print('config desc head:', hexdump(config_descriptor_head))
     total_length, = unpack('<H', config_descriptor_head[2:4])
-    print 'len', total_length
+    print('len', total_length)
     config_descriptor = device.getDescriptor(2, total_length)
     sleep(1)
-    print 'config desc:', hexdump(config_descriptor)
+    print('config desc:', hexdump(config_descriptor))
     first_supported_language, = unpack('<H', device.getDescriptor(3, 255)[2:4])
     sleep(1)
-    print 'string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16')
+    print('string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16'))
     sleep(1)
-    print 'string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16')
+    print('string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16'))
     sleep(1)
     device.setConfiguration(1)
     sleep(1)
@@ -626,7 +630,7 @@ def main():
     sleep(1)
     hid_descriptor_ep1 = device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
     sleep(1)
-    print 'HID descr interface 0:', hexdump(hid_descriptor_ep1)
+    print('HID descr interface 0:', hexdump(hid_descriptor_ep1))
     device.setHIDReport(2, 0, 0, b'\x00')
     sleep(1)
     report_0_length = (
@@ -648,7 +652,7 @@ def main():
     sleep(1)
     hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1, timeout=15) # XXX: should parse config_descriptor
     sleep(1)
-    print 'HID descr interface 1:', hexdump(hid_descriptor_ep2)
+    print('HID descr interface 1:', hexdump(hid_descriptor_ep2))
     report_1_length = (
         1 * 5 + # buttons
         3 * 1 + # padding
@@ -671,23 +675,23 @@ def main():
     sleep(1)
 
     # Exercising other standard requests
-    print 'active configuration:', device.getConfiguration()
+    print('active configuration:', device.getConfiguration())
     sleep(1)
-    print 'interface 0 active alt setting:', device.getInterface(0)
+    print('interface 0 active alt setting:', device.getInterface(0))
     sleep(1)
-    print 'interface 1 active alt setting:', device.getInterface(1)
+    print('interface 1 active alt setting:', device.getInterface(1))
     sleep(1)
-    print 'HID protocol interface 0:', device.getHIDProtocol(0)
+    print('HID protocol interface 0:', device.getHIDProtocol(0))
     sleep(1)
-    print 'HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)'
+    print('HID idle interface 0 report 0:', device.getHIDIdle(0, 0) * 4, '(ms, 0=when needed)')
     sleep(1)
-    print 'HID protocol interface 1:', device.getHIDProtocol(1)
+    print('HID protocol interface 1:', device.getHIDProtocol(1))
     sleep(1)
-    print 'HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)'
+    print('HID idle interface 1 report 1:', device.getHIDIdle(1, 1) * 4, '(ms, 0=when needed)')
     sleep(1)
 
-    print 'saved fnLock state:', device.getSavedFnLock()
-    print 'saved mouse speed:', device.getSavedMouseSpeed()
+    print('saved fnLock state:', device.getSavedFnLock())
+    print('saved mouse speed:', device.getSavedMouseSpeed())
     deadline = device.cpu.run_time + 200
     while device.mouse_initialisation_state != MOUSE_INITIALISED and device.cpu.run_time < deadline:
         device.step()
@@ -696,7 +700,7 @@ def main():
     device.setMouseState(1, -1, True, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
-    print 'report    interface 1:', hexdump(report_ep2)
+    print('report    interface 1:', hexdump(report_ep2))
     try:
         device.readEP(2, report_1_length, 63)
     except EndpointNAK:
@@ -707,7 +711,7 @@ def main():
     device.setMouseState(0, 0, False, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
-    print 'report    interface 1:', hexdump(report_ep2)
+    print('report    interface 1:', hexdump(report_ep2))
     try:
         device.readEP(2, report_1_length, 63)
     except EndpointNAK:
@@ -818,8 +822,8 @@ def main():
         b'\xd4'[0]: 'KP_MEMSUBTRACT',
     }
 
-    for y in xrange(16):
-        for x in xrange(8):
+    for y in range(16):
+        for x in range(8):
             device.pressKey(y, x)
             report = device.readEP(1, report_0_length, 63, timeout=500)
             sleep(1)
@@ -827,21 +831,21 @@ def main():
             assert report[3:] == b'\x00' * 5, hexdump(report)
             if byte_ord(report[0]):
                 assert not byte_ord(report[2])
-                print '%14s' % MODIFIER_KEY_DICT[report[0]],
+                print('%14s' % MODIFIER_KEY_DICT[report[0]], end=' ')
             else:
-                print '%14s' % KEY_DICT.get(report[2], '(none)'),
+                print('%14s' % KEY_DICT.get(report[2], '(none)'), end=' ')
             device.releaseKey(y, x)
             report = device.readEP(1, report_0_length, 63, timeout=500)
             sleep(1)
             assert report == EMPTY_KEY_REPORT, hexdump(report)
-        print
+        print()
     device.pressKey(13, 1) # LCTRL
     device.readEP(1, report_0_length, 63, timeout=500)
     sleep(1)
     device.pressKey(4, 5) # C
     report = device.readEP(1, report_0_length, 63, timeout=500)
     sleep(1)
-    print hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)')
+    print(hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)'))
     return
     device.trace = True
     while True:

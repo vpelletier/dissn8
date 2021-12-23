@@ -16,6 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 from __future__ import absolute_import
+from builtins import range
 import unittest
 from .test_base import SimSN8F2288TestBase, EQUAL
 
@@ -592,7 +593,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
             'z0': 'SET' if res0 else 'CLR',
             'z1': 'SET' if res1 else 'CLR',
         })
-        for _ in xrange(5):
+        for _ in range(5):
             sim.step()
         state_before = sim.getState()
         sim.step()
@@ -1070,7 +1071,7 @@ class SimSN8F2288Tests(SimSN8F2288TestBase):
                 B0BTS1  0x08.1
                 JMP     $       ; it's a trap !
         ''')
-        for _ in xrange(20):
+        for _ in range(20):
             sim.step()
 
         state0 = sim.getState()
