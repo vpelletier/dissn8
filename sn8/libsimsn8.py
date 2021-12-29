@@ -209,3 +209,233 @@ class BitBanging8bitsI2C:
             self._bit_count = -1
             self._sending = False
             self._sending_next = False
+
+class USBDevice:
+    """
+    Implement USB protocol-level functionalities.
+    """
+    def __init__(
+        self,
+        cpu,
+        step=None,
+        on_wake_signaling=None,
+        on_enable_change=None,
+        on_ep_enable_change=None,
+    ):
+        """
+        cpu
+          The CPU whose USB subsystem is to interface with.
+        step
+          A callable to cause CPU to advance by one simulation step while
+          waiting for a USB transaction compleation. Defaults to cpu.step when
+          None.
+        """
+        usb = cpu.usb
+        if on_wake_signaling is not None:
+            usb.on_wake_signaling = on_wake_signaling
+        if on_enable_change is not None:
+            usb.on_enable_change = on_enable_change
+        if on_ep_enable_change is not None:
+            usb.on_ep_enable_change = on_ep_enable_change
+        self._cpu = cpu
+        self._step = cpu.step if step is None else step
+
+    def _waitForEP0EventsHandled(self, deadline):
+        cpu = self._cpu
+        step = self._step
+        while (cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT) and cpu.run_time < deadline:
+            step()
+        if cpu.run_time >= deadline:
+            raise ValueError('Timeout reached')
+
+    def _waitForAckOrStall(self, endpoint, deadline):
+        cpu = self._cpu
+        step = self._step
+        stall_attr_name = (
+            'FUE0M1',
+            'FUE1M1',
+            'FUE2M1',
+            'FUE3M1',
+            'FUE4M1',
+        )[endpoint]
+        ack_attr_name = (
+            'FUE0M0',
+            'FUE1M0',
+            'FUE2M0',
+            'FUE3M0',
+            'FUE4M0',
+        )[endpoint]
+        while (
+            not getattr(cpu, stall_attr_name) and
+            not getattr(cpu, ack_attr_name) and
+            cpu.run_time < deadline
+        ):
+            step()
+
+    def _sleep(self, duration):
+        cpu = self._cpu
+        step = self._step
+        deadline = cpu.run_time + duration
+        while cpu.run_time < deadline:
+            step()
+
+    def reset(self):
+        """
+        Signal an USB reset condition.
+        """
+        self._cpu.usb.FBUS_RST = True
+        self._sleep(10) # Reset lasts 10ms
+        self._cpu.usb.FBUS_RST = False
+
+    def suspend(self):
+        """
+        Signal an USB bus suspension condition
+
+        No-op if the bus is already suspended.
+        """
+        self._cpu.FSUSPEND = True
+
+    def resume(self):
+        """
+        Signal an USB bus resume condition
+
+        No-op if bus is already active.
+        """
+        # XXX: there is more to it, but power modes are not implemented
+        self._cpu.FSUSPEND = False
+
+    def controlRead(self, request_type, request, value, index, length, timeout=5):
+        cpu = self._cpu
+        deadline = cpu.run_time + timeout
+        self._waitForEP0EventsHandled(deadline)
+        request_type |= 0x80
+        cpu.usb.sendSETUP(request_type, request, value, index, length)
+        self._waitForEP0EventsHandled(deadline)
+        # Hardcoded max packet size, as it is fixed by spu for endpoint 0
+        return self._readEP(0, length, 8, deadline)
+
+    def controlWrite(self, request_type, request, value, index, data, timeout=5):
+        cpu = self._cpu
+        deadline = cpu.run_time + timeout
+        self._waitForEP0EventsHandled(deadline)
+        request_type &= 0x7f
+        cpu.usb.sendSETUP(request_type, request, value, index, len(data))
+        self._waitForEP0EventsHandled(deadline)
+        # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
+        self._writeEP(0, data, 8, deadline)
+
+    def readEP(self, endpoint, length, max_packet_size, timeout=5):
+        return self._readEP(endpoint, length, max_packet_size, self._cpu.run_time + timeout)
+
+    def writeEP(self, endpoint, data, max_packet_size, timeout=5):
+        self._writeEP(endpoint, data, max_packet_size, self._cpu.run_time + timeout)
+
+    def _readEP(self, endpoint, length, max_packet_size, deadline):
+        recv = self._cpu.usb.recv
+        result = b''
+        while True:
+            # Wait for data to be available in endpoint buffer.
+            self._waitForAckOrStall(endpoint, deadline)
+            chunk = recv(endpoint)
+            result += chunk
+            if len(result) == length or len(chunk) < max_packet_size:
+                break
+        return result
+
+    def _writeEP(self, endpoint, data, max_packet_size, deadline):
+        send = self._cpu.usb.send
+        while data:
+            # Wait for room to be available in endpoint buffer.
+            self._waitForAckOrStall(endpoint, deadline)
+            send(endpoint, data[:max_packet_size])
+            data = data[max_packet_size:]
+
+    def clearFeature(self, recipient, feature, index=0, timeout=5):
+        self.controlWrite(
+            recipient,
+            1,
+            feature,
+            index,
+            b'',
+            timeout,
+        )
+
+    def setFeature(self, recipient, feature, index=0, timeout=5):
+        self.controlWrite(
+            recipient,
+            3,
+            feature,
+            index,
+            b'',
+            timeout,
+        )
+
+    def getStatus(self, recipient, index, timeout=5):
+        return unpack('<H', self.controlRead(
+            0x80 | recipient,
+            0,
+            0,
+            index,
+            2,
+            timeout,
+        ))
+
+    def getConfiguration(self, timeout=5):
+        return ord(self.controlRead(
+            0x80,
+            8,
+            0,
+            0,
+            1,
+            timeout,
+        ))
+
+    def setConfiguration(self, configuration, timeout=5):
+        self.controlWrite(
+            0,
+            9,
+            configuration,
+            0,
+            b'',
+            timeout,
+        )
+
+    def getInterface(self, interface, timeout=5):
+        return ord(self.controlRead(
+            0x81,
+            10,
+            0,
+            interface,
+            1,
+            timeout,
+        ))
+
+    def setInterface(self, interface, alt_setting, timeout=5):
+        self.controlWrite(
+            1,
+            11,
+            alt_setting,
+            interface,
+            b'',
+            timeout,
+        )
+
+    def getDescriptor(self, descriptor_type, length, index=0, language=0, timeout=5):
+        return self.controlRead(
+            0x80,
+            6,
+            (descriptor_type << 8) | index,
+            language,
+            length,
+            timeout,
+        )
+
+    def setAddress(self, address, timeout=5):
+        self.controlWrite(
+            0,
+            5,
+            address,
+            0,
+            b'',
+            timeout,
+        )

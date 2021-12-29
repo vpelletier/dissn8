@@ -21,7 +21,7 @@ from functools import partial
 from struct import unpack
 import warnings
 from sn8.simsn8 import SN8F2288, INF, EndpointStall, EndpointNAK, RESET_SOURCE_LOW_VOLTAGE
-from sn8.libsimsn8 import BitBanging8bitsI2C
+from sn8.libsimsn8 import BitBanging8bitsI2C, USBDevice
 
 def hexdump(value):
     return ' '.join('%02x' % x for x in value)
@@ -61,10 +61,13 @@ class KU1255:
         for column in range(8):
             cpu.p1.setLoad(column, partial(self.getKeyLoad, column))
         # USB host emulation
-        usb = cpu.usb
-        usb.on_wake_signaling = self.onUSBWakeupRequest
-        usb.on_enable_change = self.onUSBEnableChange
-        usb.on_ep_enable_change = self.onUSBEPEnableChange
+        self.usb_device = USBDevice(
+            cpu=cpu,
+            step=self.step,
+            on_wake_signaling=self.onUSBWakeupRequest,
+            on_enable_change=self.onUSBEnableChange,
+            on_ep_enable_change=self.onUSBEPEnableChange,
+        )
         # Bit-banging I2C device emulation (mouse)
         self._i2c_mouse = BitBanging8bitsI2C(
             address=0x2a,
@@ -314,175 +317,9 @@ class KU1255:
         self.i2c_buffer[3] = y & 0xff
         self.mouse_attn_float = False
 
-    def _waitForEP0EventsHandled(self, deadline):
-        cpu = self.cpu
-        step = self.step
-        while (cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT) and cpu.run_time < deadline:
-            step()
-        if cpu.run_time >= deadline:
-            raise ValueError('Timeout reached')
-
-    def controlRead(self, request_type, request, value, index, length, timeout):
-        cpu = self.cpu
-        deadline = cpu.run_time + timeout
-        self._waitForEP0EventsHandled(deadline)
-        cpu.usb.sendSETUP(request_type, request, value, index, length)
-        self._waitForEP0EventsHandled(deadline)
-        # Hardcoded max packet size, as it is fixed by spu for endpoint 0
-        return self._readEP(0, length, 8, deadline)
-
-    def controlWrite(self, request_type, request, value, index, data, timeout):
-        cpu = self.cpu
-        deadline = cpu.run_time + timeout
-        self._waitForEP0EventsHandled(deadline)
-        cpu.usb.sendSETUP(request_type, request, value, index, len(data))
-        # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
-        self._waitForEP0EventsHandled(deadline)
-        self._writeEP(0, data, 8, deadline)
-
-    def readEP(self, endpoint, length, max_packet_size, timeout=5):
-        return self._readEP(endpoint, length, max_packet_size, self.cpu.run_time + timeout)
-
-    def writeEP(self, endpoint, data, max_packet_size, timeout=5):
-        self._writeEP(endpoint, data, max_packet_size, self.cpu.run_time + timeout)
-
-    def _waitForAckOrStall(self, endpoint, deadline):
-        cpu = self.cpu
-        step = self.step
-        stall_attr_name = (
-            'FUE0M1',
-            'FUE1M1',
-            'FUE2M1',
-            'FUE3M1',
-            'FUE4M1',
-        )[endpoint]
-        ack_attr_name = (
-            'FUE0M0',
-            'FUE1M0',
-            'FUE2M0',
-            'FUE3M0',
-            'FUE4M0',
-        )[endpoint]
-        while (
-            not getattr(cpu, stall_attr_name) and
-            not getattr(cpu, ack_attr_name) and
-            cpu.run_time < deadline
-        ):
-            step()
-
-    def _readEP(self, endpoint, length, max_packet_size, deadline):
-        recv = self.cpu.usb.recv
-        result = b''
-        while True:
-            # Wait for data to be available in endpoint buffer.
-            self._waitForAckOrStall(endpoint, deadline)
-            chunk = recv(endpoint)
-            result += chunk
-            if len(result) == length or len(chunk) < max_packet_size:
-                break
-        return result
-
-    def _writeEP(self, endpoint, data, max_packet_size, deadline):
-        send = self.cpu.usb.send
-        while data:
-            # Wait for room to be available in endpoint buffer.
-            self._waitForAckOrStall(endpoint, deadline)
-            send(endpoint, data[:max_packet_size])
-            data = data[max_packet_size:]
-
-    def clearFeature(self, recipient, feature, index=0, timeout=5):
-        self.controlWrite(
-            recipient,
-            1,
-            feature,
-            index,
-            '',
-            timeout,
-        )
-
-    def setFeature(self, recipient, feature, index=0, timeout=5):
-        self.controlWrite(
-            recipient,
-            3,
-            feature,
-            index,
-            '',
-            timeout,
-        )
-
-    def getStatus(self, recipient, index, timeout=5):
-        return unpack('<H', self.controlRead(
-            0x80 | recipient,
-            0,
-            0,
-            index,
-            2,
-            timeout,
-        ))
-
-    def getConfiguration(self, timeout=5):
-        return ord(self.controlRead(
-            0x80,
-            8,
-            0,
-            0,
-            1,
-            timeout,
-        ))
-
-    def setConfiguration(self, configuration, timeout=5):
-        self.controlWrite(
-            0,
-            9,
-            configuration,
-            0,
-            '',
-            timeout,
-        )
-
-    def getInterface(self, interface, timeout=5):
-        return ord(self.controlRead(
-            0x81,
-            10,
-            0,
-            interface,
-            1,
-            timeout,
-        ))
-
-    def setInterface(self, interface, alt_setting, timeout=5):
-        self.controlWrite(
-            1,
-            11,
-            alt_setting,
-            interface,
-            '',
-            timeout,
-        )
-
-    def getDescriptor(self, descriptor_type, length, index=0, language=0, timeout=5):
-        return self.controlRead(
-            0x80,
-            6,
-            (descriptor_type << 8) | index,
-            language,
-            length,
-            timeout,
-        )
-
-    def setAddress(self, address, timeout=5):
-        self.controlWrite(
-            0,
-            5,
-            address,
-            0,
-            '',
-            timeout,
-        )
-
     def getHIDReport(self, report_type, report_id, interface, length, timeout=5):
-        return self.controlRead(
-            0b10100001,
+        return self.usb_device.controlRead(
+            0b10100001, # Note: direction bit also set in controlRead
             1,
             (report_type << 8) | report_id,
             interface,
@@ -491,8 +328,8 @@ class KU1255:
         )
 
     def getHIDIdle(self, report_id, interface, timeout=5):
-        return ord(self.controlRead(
-            0b10100001,
+        return ord(self.usb_device.controlRead(
+            0b10100001, # Note: direction bit also set in controlRead
             2,
             report_id,
             interface,
@@ -501,8 +338,8 @@ class KU1255:
         ))
 
     def getHIDProtocol(self, interface, timeout=5):
-        return ord(self.controlRead(
-            0b10100001,
+        return ord(self.usb_device.controlRead(
+            0b10100001, # Note: direction bit also set in controlRead
             3,
             0,
             interface,
@@ -511,8 +348,8 @@ class KU1255:
         ))
 
     def setHIDReport(self, report_type, report_id, interface, data, timeout=5):
-        self.controlWrite(
-            0b00100001,
+        self.usb_device.controlWrite(
+            0b00100001, # Note: direction bit also cleared in controlWrite
             9,
             (report_type << 8) | report_id,
             interface,
@@ -521,22 +358,22 @@ class KU1255:
         )
 
     def setHIDIdle(self, report_id, interface, duration, timeout=5):
-        self.controlWrite(
-            0b00100001,
+        self.usb_device.controlWrite(
+            0b00100001, # Note: direction bit also cleared in controlWrite
             10,
             (duration << 8) | report_id,
             interface,
-            '',
+            b'',
             timeout,
         )
 
     def setHIDProtocol(self, interface, protocol, timeout=5):
-        self.controlWrite(
-            0b00100001,
+        self.usb_device.controlWrite(
+            0b00100001, # Note: direction bit also cleared in controlWrite
             11,
             protocol,
             interface,
-            '',
+            b'',
             timeout,
         )
 
@@ -590,24 +427,22 @@ def main():
         raise Timeout('Not on USB bus')
     print('USB enabled at %.2fms' % device.cpu.run_time)
     # Reset
-    device.cpu.usb.reset = True
-    sleep(10) # Reset lasts 10ms
-    device.cpu.usb.reset = False
+    device.usb_device.reset()
     sleep(100) # Wait some more
     # Based on linux enumeration sequence
-    device_descriptor = device.getDescriptor(1, 8)
+    device_descriptor = device.usb_device.getDescriptor(1, 8)
     sleep(1)
     print('pre-address device desc:', hexdump(device_descriptor))
-    device.setAddress(1)
+    device.usb_device.setAddress(1)
     sleep(1)
     print('address set')
     total_length = device_descriptor[0]
-    device_descriptor = device.getDescriptor(1, total_length)
+    device_descriptor = device.usb_device.getDescriptor(1, total_length)
     sleep(1)
     print('full device desc:', hexdump(device_descriptor))
     for _ in range(3):
         try:
-            device_qualifier = device.getDescriptor(6, 0x0a)
+            device_qualifier = device.usb_device.getDescriptor(6, 0x0a)
         except EndpointStall:
             continue
         else:
@@ -615,25 +450,25 @@ def main():
             break
         finally:
             sleep(1)
-    config_descriptor_head = device.getDescriptor(2, 9)
+    config_descriptor_head = device.usb_device.getDescriptor(2, 9)
     sleep(1)
     print('config desc head:', hexdump(config_descriptor_head))
     total_length, = unpack('<H', config_descriptor_head[2:4])
     print('len', total_length)
-    config_descriptor = device.getDescriptor(2, total_length)
+    config_descriptor = device.usb_device.getDescriptor(2, total_length)
     sleep(1)
     print('config desc:', hexdump(config_descriptor))
-    first_supported_language, = unpack('<H', device.getDescriptor(3, 255)[2:4])
+    first_supported_language, = unpack('<H', device.usb_device.getDescriptor(3, 255)[2:4])
     sleep(1)
-    print('string desc 2:', device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16'))
+    print('string desc 2:', device.usb_device.getDescriptor(3, 255, 2, language=first_supported_language, timeout=10)[2:].decode('utf-16'))
     sleep(1)
-    print('string desc 1:', device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16'))
+    print('string desc 1:', device.usb_device.getDescriptor(3, 255, 1, language=first_supported_language)[2:].decode('utf-16'))
     sleep(1)
-    device.setConfiguration(1)
+    device.usb_device.setConfiguration(1)
     sleep(1)
     device.setHIDIdle(0, 0, 0)
     sleep(1)
-    hid_descriptor_ep1 = device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
+    hid_descriptor_ep1 = device.usb_device.getDescriptor(0x22, 0x51, language=0) # XXX: should parse config_descriptor
     sleep(1)
     print('HID descr interface 0:', hexdump(hid_descriptor_ep1))
     device.setHIDReport(2, 0, 0, b'\x00')
@@ -649,13 +484,13 @@ def main():
     assert int(report_0_length) == report_0_length, report_0_length
     report_0_length = int(report_0_length)
     try:
-        device.readEP(1, report_0_length, 63)
+        device.usb_device.readEP(1, report_0_length, 63)
     except EndpointNAK:
         pass
     sleep(1)
     device.setHIDIdle(0, 1, 0)
     sleep(1)
-    hid_descriptor_ep2 = device.getDescriptor(0x22, 0xd3, language=1, timeout=15) # XXX: should parse config_descriptor
+    hid_descriptor_ep2 = device.usb_device.getDescriptor(0x22, 0xd3, language=1, timeout=15) # XXX: should parse config_descriptor
     sleep(1)
     print('HID descr interface 1:', hexdump(hid_descriptor_ep2))
     report_1_length = (
@@ -668,7 +503,7 @@ def main():
     assert int(report_1_length) == report_1_length, report_1_length
     report_1_length = int(report_1_length)
     try:
-        device.readEP(2, report_1_length, 63)
+        device.usb_device.readEP(2, report_1_length, 63)
     except EndpointNAK:
         pass
     sleep(1)
@@ -680,11 +515,11 @@ def main():
     sleep(1)
 
     # Exercising other standard requests
-    print('active configuration:', device.getConfiguration())
+    print('active configuration:', device.usb_device.getConfiguration())
     sleep(1)
-    print('interface 0 active alt setting:', device.getInterface(0))
+    print('interface 0 active alt setting:', device.usb_device.getInterface(0))
     sleep(1)
-    print('interface 1 active alt setting:', device.getInterface(1))
+    print('interface 1 active alt setting:', device.usb_device.getInterface(1))
     sleep(1)
     print('HID protocol interface 0:', device.getHIDProtocol(0))
     sleep(1)
@@ -706,11 +541,11 @@ def main():
         raise Timeout('Mouse not initialised')
     # Move and click the mouse a bit.
     device.setMouseState(1, -1, True, False, False)
-    report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    report_ep2 = device.usb_device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
     print('report    interface 1:', hexdump(report_ep2))
     try:
-        device.readEP(2, report_1_length, 63)
+        device.usb_device.readEP(2, report_1_length, 63)
     except EndpointNAK:
         pass
     else:
@@ -718,11 +553,11 @@ def main():
     sleep(1)
     # Stop moving mouse and release button.
     device.setMouseState(0, 0, False, False, False)
-    report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    report_ep2 = device.usb_device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
     print('report    interface 1:', hexdump(report_ep2))
     try:
-        device.readEP(2, report_1_length, 63)
+        device.usb_device.readEP(2, report_1_length, 63)
     except EndpointNAK:
         pass
     else:
@@ -835,7 +670,7 @@ def main():
         for x in range(8):
             device.pressKey(y, x)
             try:
-                report = device.readEP(1, report_0_length, 63, timeout=50)
+                report = device.usb_device.readEP(1, report_0_length, 63, timeout=50)
             except EndpointNAK:
                 report = None
                 print('%14s' % '(nak)', end=' ')
@@ -850,15 +685,15 @@ def main():
                     print('%14s' % KEY_DICT.get(report[2], '(%#04x)' % report[2]), end=' ')
             device.releaseKey(y, x)
             if report is not None:
-                report = device.readEP(1, report_0_length, 63, timeout=50)
+                report = device.usb_device.readEP(1, report_0_length, 63, timeout=50)
                 sleep(1)
                 assert report == EMPTY_KEY_REPORT, hexdump(report)
         print()
     device.pressKey(13, 1) # LCTRL
-    device.readEP(1, report_0_length, 63, timeout=500)
+    device.usb_device.readEP(1, report_0_length, 63, timeout=500)
     sleep(1)
     device.pressKey(4, 5) # C
-    report = device.readEP(1, report_0_length, 63, timeout=500)
+    report = device.usb_device.readEP(1, report_0_length, 63, timeout=500)
     sleep(1)
     print(hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)'))
     return
