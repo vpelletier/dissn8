@@ -304,8 +304,9 @@ class ASMLibTests(SimSN8F2288TestBase):
         sim.step() # B0MOV M, A
         sim.step() # B0MOV M, A
         # From here, T0 is ticking, and will take at most 32 instructions to
-        # wake system up
-        deadline = sim.run_time + FAST_CYCLE_DURATION * 16
+        # wake the system up. Then, 2 more instructions happen (RET,
+        # B0MOV M, I), and add some margin for floating point additions.
+        deadline = sim.run_time + FAST_CYCLE_DURATION * (32 + 2 + .001)
         OSCM_ADDR = sim.addressOf('OSCM')
         assert sim.ram[OSCM_ADDR] & 0x10 == 0x00
         while sim.ram[OSCM_ADDR] & 0x10 == 0x00 and sim.run_time < deadline:
