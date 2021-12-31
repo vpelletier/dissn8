@@ -1150,7 +1150,7 @@ class SN8:
                 self.flash[base_address + index] = (
                     self.read(ram_index + 1) << 8
                 ) | self.read(ram_index)
-            self.run_time += 2 # 1~2ms to write a page
+            deadline = self.run_time + 2 # 1~2ms to write a page
         else: # Erase
             base_address &= ~0x7f
             for address in range(
@@ -1158,7 +1158,9 @@ class SN8:
                 base_address + 0x80,
             ):
                 self.flash[address] = 0xffff
-            self.run_time += 50 # 25~50ms to erase a page
+            deadline  = self.run_time + 50 # 25~50ms to erase a page
+        while self.run_time < deadline:
+            self.tic()
 
     def _readYZ(self):
         address = (self.Y << 8) | self.Z
