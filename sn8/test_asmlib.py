@@ -33,13 +33,13 @@ class TracingBitBanging8bitsI2C(BitBanging8bitsI2C):
         super().reset()
         self.event_list = []
 
-    def onClockEdge(self, scl, sda):
+    def onClockEdge(self, time, scl, sda):
         self.event_list.append((self._cpu.run_time, 'scl', scl, sda))
-        super().onClockEdge(scl, sda)
+        super().onClockEdge(time=time, scl=scl, sda=sda)
 
-    def onDataEdge(self, scl, sda):
+    def onDataEdge(self, time, scl, sda):
         self.event_list.append((self._cpu.run_time, 'sda', scl, sda))
-        super().onDataEdge(scl, sda)
+        super().onDataEdge(time=time, scl=scl, sda=sda)
 
 class ASMLibTests(SimSN8F2288TestBase):
     def _getSimulator(self, *args, **kw):
@@ -172,6 +172,7 @@ class ASMLibTests(SimSN8F2288TestBase):
         i2c_device = TracingBitBanging8bitsI2C(
             cpu=sim,
             address=0b01010000,
+            speed=100,
             onAddressed=onAddressed,
             onStop=lambda: onEvent('stop'),
             onDataByteReceived=onDataByteReceived,
@@ -186,7 +187,11 @@ class ASMLibTests(SimSN8F2288TestBase):
         while sim.ram[4] is None and sim.run_time < 2:
             sim.step()
             p0data = p0.read()
-            i2c_device.step(scl=p0data & 2, sda=p0data & 1)
+            i2c_device.step(
+                time=sim.run_time,
+                scl=p0data & 2,
+                sda=p0data & 1,
+            )
         # Protocol event checks
         self.assertEqual(
             event_list,

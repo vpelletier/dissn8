@@ -68,6 +68,7 @@ class KU1255:
         # Bit-banging I2C device emulation (mouse)
         self._i2c_mouse = BitBanging8bitsI2C(
             address=0x2a,
+            speed=100, # Guessed speed.
             onAddressed=self._onI2CAddressed,
             onDataByteReceived=self._onI2CDataByteReceived,
             getNextDataByte=self._getNextI2CDataByte,
@@ -165,7 +166,11 @@ class KU1255:
         cpu.step()
         # Assume CPU agrees with device on bus state
         p2 = cpu.p2.read()
-        self._i2c_mouse.step(p2 & 0x10, p2 & 0x20)
+        self._i2c_mouse.step(
+            time=cpu.run_time,
+            scl=p2 & 0x10,
+            sda=p2 & 0x20,
+        )
 
     def _onI2CAddressed(self, read):
         if read:

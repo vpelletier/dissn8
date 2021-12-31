@@ -27,6 +27,7 @@ class BitBanging8bitsI2C:
     def __init__(
         self,
         address,
+        speed,
         onAddressed=lambda x: False,
         onStop=lambda: None,
         onDataByteReceived=lambda _: False,
@@ -35,6 +36,11 @@ class BitBanging8bitsI2C:
         """
         address (int)
             7-bits I2C address.
+        speed (int)
+            Device speed in kbps.
+            Standard values are 100kbps, 400kbps, 1Mbps, 1.7Mbps, 3.4Mbps,
+            5Mbps.
+            SCL changes less than 1 / speed apart are ignored.
         onAddressed (callable(read))
             Called when bus address matches the value above.
             Argument tells whether host requests a read (True) or a write
@@ -56,6 +62,7 @@ class BitBanging8bitsI2C:
         address <<= 1
         self._read_address = address | 1
         self._write_address = address
+        self._min_change_period = .5 / speed
         self.onAddressed = onAddressed
         self.onStop = onStop
         self.onDataByteReceived = onDataByteReceived
@@ -63,6 +70,7 @@ class BitBanging8bitsI2C:
         self.reset()
 
     def reset(self):
+        self._next_scl_time = 0
         self._previous_scl = True
         self._previous_sda = True
         self.scl_float = True
@@ -74,7 +82,7 @@ class BitBanging8bitsI2C:
         self._sending = False
         self._addressed = False
 
-    def step(self, scl, sda):
+    def step(self, time, scl, sda):
         scl = bool(scl)
         sda = bool(sda)
         scl_changed = self._previous_scl != scl
@@ -82,17 +90,21 @@ class BitBanging8bitsI2C:
         if scl_changed:
             if sda_changed:
                 raise ValueError('SCL and SDA changed during same step')
-            self.onClockEdge(scl, sda)
-            self._previous_scl = scl
+            self._scl_edge_time = time
+            self._scl_edge = scl
+            if time >= self._next_scl_time:
+                self._next_scl_time = time + self._min_change_period
+                self.onClockEdge(time=time, scl=scl, sda=sda)
+                self._previous_scl = scl
         elif sda_changed:
-            self.onDataEdge(scl, sda)
+            self.onDataEdge(time=time, scl=scl, sda=sda)
             self._previous_sda = sda
 
     def _shiftCurrentByteToSDA(self):
         self.sda_float = bool(self._current_byte & 0x80)
         self._current_byte = (self._current_byte << 1) & 0xff
 
-    def _onByteReceived(self):
+    def _onByteReceived(self, time):
         if self._state == I2C_ADDRESS:
             if self._current_byte == self._read_address:
                 self._sending_next = True
@@ -105,6 +117,9 @@ class BitBanging8bitsI2C:
                 ack = False
             if ack:
                 self.sda_float = False # ACK
+                # CPU may decide to clock as soon as it sees our ACK, so allow
+                # an immediate edge.
+                self._next_scl_time = time
                 self._state = I2C_DATA
             else:
                 self.sda_float = True
@@ -112,45 +127,56 @@ class BitBanging8bitsI2C:
         elif self._state == I2C_DATA:
             if self.onDataByteReceived(self._current_byte):
                 self.sda_float = False # ACK
+                # CPU may decide to clock as soon as it sees our ACK, so allow
+                # an immediate edge.
+                self._next_scl_time = time
             else:
                 self.sda_float = True # NAK
                 self._state = I2C_IGNORE
         else:
             raise ValueError('_onByteReceived called in state %r' % self._state)
 
-    def onClockEdge(self, scl, sda):
+    def onClockEdge(self, time, scl, sda):
         if self._state == I2C_IGNORE:
             return
         if scl:
             # Rising clock edge
             if self._bit_count < 8:
+                # Still during data bits
                 if not self._sending:
-                    # Data bit
+                    # Receiving: Sample data bit
                     self._current_byte = (
                         (self._current_byte << 1) | sda
                     ) & 0xff
+                # Nothing to do when sending.
             else:
+                # Handshake bit
                 assert self._bit_count == 8, self._bit_count
                 if self._sending and sda:
-                    # CPU NAKed
+                    # Sending and CPU NAKed
                     self._state = I2C_IGNORE
+                # Nothig to do when receiving
         else:
             # Falling clock edge
             if self._bit_count < 7:
+                # Still during data bits
                 self._bit_count += 1
                 if self._sending:
+                    # Sending: send data bit
                     self._shiftCurrentByteToSDA()
+                # Nothing to do when receiving
             elif self._bit_count == 7:
+                # Handshake bit
                 self._bit_count += 1
                 if self._sending:
                     # Release SDA so CPU may NAK
                     self.sda_float = True
                 else:
-                    self._onByteReceived()
+                    self._onByteReceived(time=time)
                     self._current_byte = 0x00
             else:
                 assert self._bit_count == 8, self._bit_count
-                # Ack bit time finished
+                # Handshake bit time finished
                 self._bit_count = 0
                 self._sending = self._sending_next
                 if self._sending:
@@ -164,9 +190,14 @@ class BitBanging8bitsI2C:
                         self._current_byte = next_byte
                         self._shiftCurrentByteToSDA()
                 else:
+                    if not self.sda_float:
+                        # CPU may decide to clock as soon as it sees we stopped
+                        # ACKing, so allow an immediate edge.
+                        self._next_scl_time = time
                     self.sda_float = True
 
-    def onDataEdge(self, scl, sda):
+    def onDataEdge(self, time, scl, sda):
+        _ = time
         if scl:
             if sda:
                 if self._addressed:
