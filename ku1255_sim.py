@@ -180,7 +180,12 @@ class KU1255:
         return True
 
     def _onI2CDataByteReceived(self, data_byte):
-        #print 'Received data byte %#04x' % data_byte
+        print(
+            '%.6fms i2c_mouse: cpu wrote %#04x' % (
+                self.cpu.run_time,
+                data_byte,
+            ),
+        )
         self.i2c_in_buffer.append(data_byte)
         if self.i2c_in_buffer == [0xfc]:
             self.mouse_initialisation_state = MOUSE_INIT1
@@ -190,15 +195,19 @@ class KU1255:
             #self.mouse_attn_float = False
             return True
         warnings.warn(
-            'Mouse received unknown byte sequence received from '
-            'cpu: %s' % ','.join(
-                '%#03x' % x for x in self.i2c_in_buffer
+            'Mouse received unknown byte sequence from cpu : %s' % ','.join(
+                '%#04x' % x for x in self.i2c_in_buffer
             ),
         )
         return False
 
     def _getNextI2CDataByte(self):
-        # Prepare first bit of next byte
+        if self.i2c_buffer_index == 0:
+            print(
+                '%.6fms i2c_mouse: cpu reads' % (
+                    self.cpu.run_time,
+                ),
+            )
         try:
             result = self.i2c_buffer[self.i2c_buffer_index]
         except IndexError:
@@ -310,6 +319,8 @@ class KU1255:
         step = self.step
         while (cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT) and cpu.run_time < deadline:
             step()
+        if cpu.run_time >= deadline:
+            raise ValueError('Timeout reached')
 
     def controlRead(self, request_type, request, value, index, length, timeout):
         cpu = self.cpu
@@ -577,6 +588,7 @@ def main():
         device.step()
     if not device.usb_is_enabled:
         raise Timeout('Not on USB bus')
+    print('USB enabled at %.2fms' % device.cpu.run_time)
     # Reset
     device.cpu.usb.reset = True
     sleep(10) # Reset lasts 10ms
@@ -685,11 +697,14 @@ def main():
 
     print('saved fnLock state:', device.getSavedFnLock())
     print('saved mouse speed:', device.getSavedMouseSpeed())
-    deadline = device.cpu.run_time + 200
+    # XXX: why 500ms ? this does not seem to match my reading of the original
+    # firmware. Not checked against real hardware.
+    deadline = device.cpu.run_time + 500
     while device.mouse_initialisation_state != MOUSE_INITIALISED and device.cpu.run_time < deadline:
         device.step()
     if device.mouse_initialisation_state != MOUSE_INITIALISED:
         raise Timeout('Mouse not initialised')
+    # Move and click the mouse a bit.
     device.setMouseState(1, -1, True, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
@@ -701,6 +716,7 @@ def main():
     else:
         raise AssertionError('EP2 is not NAKing ?')
     sleep(1)
+    # Stop moving mouse and release button.
     device.setMouseState(0, 0, False, False, False)
     report_ep2 = device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
     sleep(1)
@@ -818,19 +834,25 @@ def main():
     for y in range(16):
         for x in range(8):
             device.pressKey(y, x)
-            report = device.readEP(1, report_0_length, 63, timeout=500)
-            sleep(1)
-            assert report[1] == 0x00, hexdump(report)
-            assert report[3:] == b'\x00' * 5, hexdump(report)
-            if report[0]:
-                assert not report[2]
-                print('%14s' % MODIFIER_KEY_DICT[report[0]], end=' ')
+            try:
+                report = device.readEP(1, report_0_length, 63, timeout=50)
+            except EndpointNAK:
+                report = None
+                print('%14s' % '(nak)', end=' ')
             else:
-                print('%14s' % KEY_DICT.get(report[2], '(none)'), end=' ')
+                sleep(1)
+                assert report[1] == 0x00, hexdump(report)
+                assert report[3:] == b'\x00' * 5, hexdump(report)
+                if report[0]:
+                    assert not report[2]
+                    print('%14s' % MODIFIER_KEY_DICT[report[0]], end=' ')
+                else:
+                    print('%14s' % KEY_DICT.get(report[2], '(%#04x)' % report[2]), end=' ')
             device.releaseKey(y, x)
-            report = device.readEP(1, report_0_length, 63, timeout=500)
-            sleep(1)
-            assert report == EMPTY_KEY_REPORT, hexdump(report)
+            if report is not None:
+                report = device.readEP(1, report_0_length, 63, timeout=50)
+                sleep(1)
+                assert report == EMPTY_KEY_REPORT, hexdump(report)
         print()
     device.pressKey(13, 1) # LCTRL
     device.readEP(1, report_0_length, 63, timeout=500)
