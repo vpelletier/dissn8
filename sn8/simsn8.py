@@ -93,10 +93,9 @@ class MainSeriesPort:
     """
     I2C port, under another name.
     """
-    def __init__(self, cpu, irq_name, ien_name):
+    def __init__(self, cpu, irq_name):
         self.cpu = cpu
         self.irq_name = irq_name
-        self.ien_name = ien_name
         self.reset()
 
     def __repr__(self):
@@ -136,10 +135,9 @@ class MainSeriesPort:
         raise NotImplementedError
 
 class USB:
-    def __init__(self, cpu, irq_name, ien_name):
+    def __init__(self, cpu, irq_name):
         self.cpu = cpu
         self.irq_name = irq_name
-        self.ien_name = ien_name
         self.next_sof_time = 0
         self.on_wake_signaling = lambda: None
         self.on_enable_change = lambda state: None
@@ -306,10 +304,7 @@ class USB:
             self._interrupt()
 
     def _interrupt(self):
-        cpu = self.cpu
-        setattr(cpu, self.irq_name, 1)
-        if getattr(cpu, self.ien_name):
-            cpu.interrupt()
+        setattr(self.cpu, self.irq_name, 1)
 
     def sendSETUP(self, request_type, request, value, index, length):
         cpu = self.cpu
@@ -576,12 +571,10 @@ class USB:
         return bool(self.drive & 0x01)
 
 class UART:
-    def __init__(self, cpu, rx_irq_name, rx_ien_name, tx_irq_name, tx_ien_name):
+    def __init__(self, cpu, rx_irq_name, tx_irq_name):
         self.cpu = cpu
         self.rx_irq_name = rx_irq_name
-        self.rx_ien_name = rx_ien_name
         self.tx_irq_name = tx_irq_name
-        self.tx_ien_name = tx_ien_name
         self.reset()
 
     def __repr__(self):
@@ -606,10 +599,9 @@ class UART:
         raise NotImplementedError
 
 class AnalogToDigitalConverter:
-    def __init__(self, cpu, irq_name, ien_name):
+    def __init__(self, cpu, irq_name):
         self.cpu = cpu
         self.irq_name = irq_name
-        self.ien_name = ien_name
         self.reset()
 
     def __repr__(self):
@@ -772,11 +764,10 @@ class Watchdog:
             warnings.warn('Bad value written to watchdog: %#04x' % (value, ))
 
 class Timer:
-    def __init__(self, cpu, counter_mask, irq_name, ien_name, mode_mask=0xf0, can_wake=True):
+    def __init__(self, cpu, counter_mask, irq_name, mode_mask=0xf0, can_wake=True):
         self.cpu = cpu
         self.counter_mask = counter_mask
         self.irq_name = irq_name
-        self.ien_name = ien_name
         self.mode_mask = mode_mask
         self.can_wake = can_wake
         self.reset()
@@ -831,8 +822,6 @@ class Timer:
                     if self.can_wake:
                         self.cpu.wake()
                     setattr(self.cpu, self.irq_name, 1)
-                    if getattr(self.cpu, self.ien_name):
-                        self.cpu.interrupt()
 
     def readLow(self):
         return self.value & 0xff
@@ -867,8 +856,8 @@ class Timer:
         }[value & 0x70]
 
 class TimerCounter(Timer):
-    def __init__(self, cpu, irq_name, ien_name):
-        super().__init__(cpu, 0xff, irq_name, ien_name, 0xff, False)
+    def __init__(self, cpu, irq_name):
+        super().__init__(cpu, 0xff, irq_name, 0xff, False)
 
 class SN8:
     def __init__(self, flash_file):
@@ -890,15 +879,15 @@ class SN8:
         self.slow_clock = 0 # ms
         self.oscillator_wakeup_time = 6 # ms
         self.watchdog = watchdog = Watchdog(self)
-        self.t0 = t0 = Timer(self, 0xff, 'FT0IRQ', 'FT0IEN')
-        self.t1 = t1 = Timer(self, 0xffff, 'FT1IRQ', 'FT1IEN')
-        self.tc0 = tc0 = TimerCounter(self, 'FTC0IRQ', 'FTC0IEN')
-        self.tc1 = tc1 = TimerCounter(self, 'FTC1IRQ', 'FTC1IEN')
-        self.tc2 = tc2 = TimerCounter(self, 'FTC2IRQ', 'FTC2IEN')
-        self.msp = msp = MainSeriesPort(self, 'FMSPIRQ', 'FMSPIEN')
-        self.usb = usb = USB(self, 'FUSBIRQ', 'FUSBIEN')
-        self.uart = uart = UART(self, 'FUTRXIRQ', 'FUTRXIEN', 'FUTTXIRQ', 'FUTTXIEN')
-        self.adc = adc = AnalogToDigitalConverter(self, 'FADCIRQ', 'FADCIEN')
+        self.t0 = t0 = Timer(self, 0xff, 'FT0IRQ')
+        self.t1 = t1 = Timer(self, 0xffff, 'FT1IRQ')
+        self.tc0 = tc0 = TimerCounter(self, 'FTC0IRQ')
+        self.tc1 = tc1 = TimerCounter(self, 'FTC1IRQ')
+        self.tc2 = tc2 = TimerCounter(self, 'FTC2IRQ')
+        self.msp = msp = MainSeriesPort(self, 'FMSPIRQ')
+        self.usb = usb = USB(self, 'FUSBIRQ')
+        self.uart = uart = UART(self, 'FUTRXIRQ', 'FUTTXIRQ')
+        self.adc = adc = AnalogToDigitalConverter(self, 'FADCIRQ')
         self.A = None
         addr = self.addressOf
         self._volatile_dict = {
@@ -1298,6 +1287,7 @@ class SN8:
         )
 
     def reset(self, source):
+        self._irq_line = False
         self.ram[0x80:0x100] = REGISTERS_RESET_VALUE_LIST
         self.PFLAG = (self.PFLAG & 0x3f) | source
         self._reloadCodeOptions()
@@ -1350,6 +1340,21 @@ class SN8:
                 self.slow_clock -= self.slow_clock_threshold
         for device in device_list:
             device.tic()
+        # XXX: not verified on hardware:
+        # - when, during an instruction cycle, is interrupt checked ?
+        # - does setting an RQ flag trigger an interrupt ?
+        # - does setting an EN flag trigger an interrupt it masked ?
+        # - does setting GIE trigger an interrupt it masked ?
+        old_interrupt_line = self._irq_line
+        self._irq_line = new_interrupt_line = self.FGIE and (
+            (
+                self.INTRQ & self.INTEN
+            ) or (
+                self.INTRQ1 & self.INTEN1
+            )
+        )
+        if not old_interrupt_line and new_interrupt_line:
+            self.interrupt()
 
     def wake(self):
         oscm = self.OSCM
