@@ -301,8 +301,8 @@ class USBDevice:
 
         No-op if bus is already active.
         """
-        # XXX: there is more to it, but power modes are not implemented
         self._cpu.FSUSPEND = False
+        self._cpu.wake()
 
     def controlRead(self, request_type, request, value, index, length, timeout=5):
         cpu = self._cpu
