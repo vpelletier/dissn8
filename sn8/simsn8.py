@@ -1289,6 +1289,14 @@ class SN8:
         )
 
     def reset(self, source):
+        """
+        source:
+            0x00: watchdog
+            0x40: reserved
+            0x80: LVD
+            0xc0: reset pin
+        """
+        assert source & 0xc0 == source, hex(source)
         self._irq_line = False
         self.ram[0x80:0x100] = REGISTERS_RESET_VALUE_LIST
         self.PFLAG = (self.PFLAG & 0x3f) | source
