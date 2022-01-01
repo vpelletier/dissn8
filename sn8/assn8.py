@@ -21,6 +21,7 @@ import argparse
 import ast
 from collections import defaultdict
 from io import StringIO
+import itertools
 import os.path
 from struct import pack, unpack
 import sys
@@ -71,6 +72,7 @@ AUTO_LABEL_BACKWARD = '@B'
 
 class ParserFrame:
     has_set_origin = False
+    partial_word = False
     def __init__(self, parser, filename, address):
         self.parser = parser
         self.filename = filename
@@ -86,6 +88,7 @@ class ParserFrame:
     def setOrigin(self, address):
         self.has_set_origin = True
         self.address = address
+        self.partial_word = False
 
 class Allocator:
     def __init__(self, start, stop):
@@ -498,6 +501,7 @@ class Assembler:
         '''
         alignment = production[2]
         result, remainder = divmod(self.address, alignment)
+        self.partial_word = False
         if remainder:
             self.address = (result + 1) * alignment
 
@@ -520,6 +524,7 @@ class Assembler:
             # Prepare for any back reference
             name = AUTO_LABEL_BACKWARD
         self.setIdentifier(name, address)
+        self.partial_word = False
 
     def _resolveLabel(self, name, address):
         assert address & 0x3fff == address
@@ -531,6 +536,11 @@ class Assembler:
         emitable : DB data_list EOL
         '''
         data_iterator = iter(production[2])
+        if self.partial_word:
+            data_a = self.unwrite()
+            if not 0 <= data_a <= 0xff:
+                raise ValueError('Value out of bounds: %x' % data_a)
+            data_iterator = itertools.chain([data_a], data_iterator)
         while True:
             try:
                 data_a = next(data_iterator)
@@ -539,8 +549,10 @@ class Assembler:
             try:
                 data_r = next(data_iterator)
             except StopIteration:
-                data_r = 0
-            self.write(data_a | (data_r << 8))
+                self.write(data_a)
+                self.partial_word = True
+            else:
+                self.write(data_a | (data_r << 8))
 
     def p_emitable_dw(self, production):
         '''
@@ -755,6 +767,17 @@ class Assembler:
     def address(self, value):
         self._parser_stack[-1].setAddress(value)
 
+    @property
+    def partial_word(self):
+        try:
+            return self._parser_stack[-1].partial_word
+        except IndexError:
+            return None # Because of ply introspections
+
+    @partial_word.setter
+    def partial_word(self, value):
+        self._parser_stack[-1].partial_word = value
+
     def getIdentifier(self, name, default=MARKER, acquire=True):
         try:
             return self.chip_identifier_dict[name]
@@ -784,6 +807,11 @@ class Assembler:
             raise ValueError('Redefining program address %x' % self.address)
         self.rom[self.address] = value
         self.address += 1
+        self.partial_word = False
+
+    def unwrite(self):
+        self.address -= 1
+        return self.rom.pop(self.address)
 
     def writeInstruction(self, lineno, name, left=NO_OPERAND, right=NO_OPERAND):
         try:

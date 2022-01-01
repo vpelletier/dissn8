@@ -90,6 +90,19 @@ _non_exported_label:
         JMP   $+1         ; 2-cycles, 1-instruction delay
         JMP   label_in_included_file
 
+        ; Verify DB (non-)padding
+        DB    0x01 ; no padding after this
+        DB    0x02
+        DB    0x03 ; padding after this
+        DW    0x0605
+        DB    0x07 ; padding after this
+        MOV   A, #0xff
+        DB    0x09 ; padding after this
+.ALIGN 1
+        DB    0x0b ; padding after this
+@@:
+        DB    0x0d
+
 .ALIGN 32
 INCLUDE "0.inc.0.asm"
         JMP   halt_and_catch_fire
