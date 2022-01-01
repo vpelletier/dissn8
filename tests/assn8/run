@@ -1,4 +1,5 @@
 #!/bin/sh
+status=0
 for expected in *.expected.gz; do
   base="$(basename "$expected" ".expected.gz")"
   produced="${base}.produced"
@@ -7,24 +8,30 @@ for expected in *.expected.gz; do
   echo -n "${base}... "
   if ../../assn8 -o "$produced" "${base}.asm"; then :; else
     echo "assn8 failed"
+    status=1
     continue
   fi
   if zcat "$expected" | cmp --verbose "$produced"; then :; else
     echo "assembled cmp failed"
+    status=1
     continue
   fi
   if ../../dissn8 -c ../../sn8/sn8f2288.cfg -o "$disassembled" "$produced"; then :; else
     echo "dissn8 failed"
+    status=1
     continue
   fi
   if ../../assn8 -o "$reproduced" "$disassembled"; then :; else
     echo "reassembly failed"
+    status=1
     continue
   fi
   if cmp --verbose "$produced" "$reproduced"; then :; else
     echo "reassembled cmp failed"
+    status=1
     continue
   fi
   rm "$produced" "$disassembled" "$reproduced"
   echo "Success"
 done
+exit $status
