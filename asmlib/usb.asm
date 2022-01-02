@@ -546,7 +546,7 @@ _handle_get_descriptor:
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
-        CMPRS     A, #3
+        CMPRS     A, #USB_DT_STRING
         JMP       @F
         JMP       _usb_get_string_descriptor
 @@:
@@ -563,7 +563,7 @@ _handle_get_descriptor:
         B0BTS0    FZ
         JMP       usb_deferred_stall_ep0
         B0MOV     A, R
-        CMPRS     A, #2
+        CMPRS     A, #USB_DT_CONFIG
         JMP       @F
         JMP       _get_configuration_descriptor
 @@:
@@ -574,7 +574,7 @@ _handle_get_descriptor:
         B0BTS0    FZ
         JMP       usb_deferred_stall_ep0
         B0MOV     A, R
-        CMPRS     A, #1
+        CMPRS     A, #USB_DT_DEVICE
         JMP       usb_deferred_stall_ep0
         B0BSET    FC
         ; ABI:
