@@ -111,7 +111,7 @@ usb_handle: ; modifies: A, R, Y, Z
         B0BTS0    FSUSPEND
         JMP       usb_on_suspend
         B0BTS0    FBUS_RST
-        JMP       usb_on_reset
+        JMP       _handle_reset
         B0BTS0    FSOF
         JMP       usb_on_sof
         B0BTS0    FPKTERR
@@ -260,6 +260,16 @@ _handle_setupdata:
         JMP       _handle_set_interface     ; 11
         JMP       usb_deferred_stall_ep0    ; 12 SYNCH_FRAME, no ISO support
         ; unreachable
+
+_handle_reset:
+        CALL      usb_init
+        MOV       A, UDA
+        AND       A, #0x80
+        B0MOV     UDA, A
+        MOV       A, #0x00
+        CALL      usb_set_configuration     ; return value ignored
+        JMP       usb_on_reset
+        ; RET stolen from usb_on_reset
 
 _handle_get_status:
         ; All fields must be 0, except wLengthL wich must be 2 and wIndexL
