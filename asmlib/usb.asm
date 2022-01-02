@@ -656,7 +656,7 @@ _handle_get_descriptor_done:
         B0BSET    _data_in_from_flash
         B0BCLR    FEP0SETUP
         JMP       usb_ack_ep0
-        
+
 _handle_get_configuration:
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
