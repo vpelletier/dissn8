@@ -18,9 +18,9 @@
 ; Inspired from fx2lib.
 ; - max stack depth: 2, including incomming call and calls to functions
 ;   expected from main firmware:
-;   - usb_get_device_descriptor_address_and_length
-;   - usb_get_configuration_descriptor_address_and_length
-;   - usb_get_string_descriptor_address_and_length
+;   - usb_get_device_descriptor_address
+;   - usb_get_configuration_descriptor_address
+;   - usb_get_string_descriptor_address
 ;   - usb_set_configuration
 ;   - usb_get_interface
 ;   - usb_set_interface
@@ -71,12 +71,12 @@ _setup_data_out         EQU _bitmap0.4 ; 0 for IN data stage + OUT status stage
                                        ; 1 for optional OUT data stage and IN status stage
 _data_in_from_flash     EQU _bitmap0.5 ; 0 if IN transfer data is already in buffer
                                        ; 1 if it must be read from flash
-usb_data_in_skip_low_byte   EQU _bitmap0.6
+_usb_data_in_skip_low_byte  EQU _bitmap0.6
 _active_configuration       DS 1
 usb_descriptor_pointer_l    DS 1
 usb_descriptor_pointer_m    DS 1
-usb_setup_data_len_l        DS 1
-usb_setup_data_len_m        DS 1
+_usb_setup_data_len_l       DS 1
+_usb_setup_data_len_m       DS 1
 
 USB_DT_DEVICE             EQU 0x01
 USB_DT_CONFIG             EQU 0x02
@@ -96,8 +96,8 @@ usb_init: ; modifies: A
         B0MOV     _active_configuration, A
         B0MOV     usb_descriptor_pointer_l, A
         B0MOV     usb_descriptor_pointer_m, A
-        B0MOV     usb_setup_data_len_l, A
-        B0MOV     usb_setup_data_len_m, A
+        B0MOV     _usb_setup_data_len_l, A
+        B0MOV     _usb_setup_data_len_m, A
         RET
 
 ; Call to handle one USB EP0 or bus event.
@@ -173,23 +173,22 @@ _load_ep0_buffer_from_flash:
         B0MOV     Z, A
         MOV       A, #0x00
         B0MOV     UDP0, A
-        B0BTS0    usb_data_in_skip_low_byte
-        MOVC                                ; prime the pump
+        B0BCLR    _usb_data_in_skip_low_byte
 _load_ep0_buffer_from_flash_loop:
         ; any byte left to send ?
-        B0MOV     A, usb_setup_data_len_l
+        B0MOV     A, _usb_setup_data_len_l
         B0BTS1    FZ
         JMP       @F
-        B0MOV     A, usb_setup_data_len_m      ; l is zero, check h
+        B0MOV     A, _usb_setup_data_len_m      ; l is zero, check h
         B0BTS0    FZ
         JMP       _load_ep0_buffer_from_flash_exit ; h & l are zero, loop is over
         MOV       A, #0xff                  ; -1
-        B0ADD     usb_setup_data_len_m, A
+        B0ADD     _usb_setup_data_len_m, A
 @@:
         MOV       A, #0xff                  ; -1
-        B0ADD     usb_setup_data_len_l, A
+        B0ADD     _usb_setup_data_len_l, A
         ; which byte should be sent ?
-        B0BTS1    usb_data_in_skip_low_byte
+        B0BTS1    _usb_data_in_skip_low_byte
         JMP       @F
         MOV       A, #1                     ; move pointer to next word
         B0ADD     Z, A
@@ -206,11 +205,11 @@ _load_ep0_buffer_from_flash_write_ep0_buf:
         ADD       A, #1
         B0MOV     UDP0, A
         ; switch to the other byte for next iteration
-        B0BTS0    usb_data_in_skip_low_byte
+        B0BTS0    _usb_data_in_skip_low_byte
         JMP       @F
-        B0BSET    usb_data_in_skip_low_byte
+        B0BSET    _usb_data_in_skip_low_byte
 @@:
-        B0BCLR    usb_data_in_skip_low_byte
+        B0BCLR    _usb_data_in_skip_low_byte
         ; is there room left in EP0 buffer ?
         CMPRS     A, #8
         JMP       _load_ep0_buffer_from_flash_loop
@@ -224,8 +223,8 @@ _load_ep0_buffer_from_flash_exit:
 
 _handle_setupdata:
         MOV       A, #0x00
-        B0MOV     usb_setup_data_len_l, A
-        B0MOV     usb_setup_data_len_m, A
+        B0MOV     _usb_setup_data_len_l, A
+        B0MOV     _usb_setup_data_len_m, A
         B0BCLR    _ep0_stall_next_stage
         B0BCLR    _ep0_handoff
         B0BCLR    _setup_data_out
@@ -579,9 +578,9 @@ _handle_get_descriptor:
         B0BSET    FC
         ; ABI:
         ; in: (nil)
-        ; out: (see usb_get_string_descriptor_address_and_length)
-        CALL      usb_get_device_descriptor_address_and_length
-        JMP       _handle_get_descriptor_respond
+        ; out: (see usb_get_string_descriptor_address)
+        CALL      usb_get_device_descriptor_address
+        JMP       _get_descriptor_length
 _get_configuration_descriptor:
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
@@ -589,8 +588,20 @@ _get_configuration_descriptor:
         B0BSET    FC
         ; ABI:
         ; in: A: descriptor index
-        ; out: (see usb_get_string_descriptor_address_and_length)
-        CALL      usb_get_configuration_descriptor_address_and_length
+        ; out: (see usb_get_string_descriptor_address)
+        CALL      usb_get_configuration_descriptor_address
+        ; get length from wTotalLength
+        MOV       A, usb_descriptor_pointer_l
+        MOV       A, #1 ; wTotalLength is 1 word after descriptor start
+        B0MOV     Z, A
+        MOV       A, usb_descriptor_pointer_m
+        B0BTS0    FC
+        ADD       A, #1
+        B0MOV     Y, A
+        MOVC
+        B0MOV     _usb_setup_data_len_l, A
+        B0MOV     A, R
+        B0MOV     _usb_setup_data_len_m, A
         JMP       _handle_get_descriptor_respond
 _usb_get_string_descriptor:
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
@@ -599,25 +610,27 @@ _usb_get_string_descriptor:
         B0BSET    FC
         ; ABI:
         ; in: A: descriptor index
-        ; out: usb_descriptor_pointer_l,h set to in-flash address of first word
-        ;      usb_data_in_skip_low_byte  set if low byte of first word must be skipped
-        ;      usb_setup_data_len_l,h     set to descriptor length (ignore wLength)
+        ; out: usb_descriptor_pointer_l,m set to in-flash address of first word
         ;      FC                         clear to ACK (otherwise above values are then ignored and a stall is sent back)
         ; descriptor is expected packed in flash.
-        CALL      usb_get_string_descriptor_address_and_length
+        CALL      usb_get_string_descriptor_address
+_get_descriptor_length:
+        MOV       A, usb_descriptor_pointer_l
+        B0MOV     Z, A
+        MOV       A, usb_descriptor_pointer_m
+        B0MOV     Y, A
+        MOVC
+        B0MOV     _usb_setup_data_len_l, A
+        MOV       A, #0
+        B0MOV     _usb_setup_data_len_m, A
 
-        ; For ex, to send 0x01, 0x23, 0x45:
-        ; dummy_descriptor: DB  0x01, 0x23, 0x45
-        ; usb_get_string_descriptor_address_and_length:
-        ;       MOV     A, #dummy_descriptor$L
+        ; For example, to send the 'a' string descriptor:
+        ; STRING_DESCRIPTOR_1: DB  0x04, USB_DT_STRING, 'a', 0
+        ; usb_get_string_descriptor_address:
+        ;       MOV     A, #STRING_DESCRIPTOR_1$L
         ;       B0MOV   usb_descriptor_pointer_l, A
-        ;       MOV     A, #dummy_descriptor$M
+        ;       MOV     A, #STRING_DESCRIPTOR_1$M
         ;       B0MOV   usb_descriptor_pointer_m, A
-        ;       MOV     A, #3
-        ;       B0MOV   usb_setup_data_len_l, A
-        ;       MOV     A, #0
-        ;       B0MOV   usb_setup_data_len_m, A
-        ;       B0BCLR  usb_data_in_skip_low_byte
         ;       B0BCLR  FC
         ;       RET
 
@@ -629,29 +642,29 @@ _handle_get_descriptor_respond:
         B0MOV     A, UDR0_R
         XOR       A, #0xff
         ADD       A, #1
-        ADD       A, usb_setup_data_len_m
+        ADD       A, _usb_setup_data_len_m
         B0BTS0    FC
-        JMP       _handle_get_descriptor_done         ; usb_setup_data_len_m < wLengthH: use usb_setup_data_len_m,l
+        JMP       _handle_get_descriptor_done         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
         B0BTS0    FZ
         JMP       @F                                  ; same MSB, check LSB
-        B0MOV     A, UDR0_R                           ; wLengthH < usb_setup_data_len_m: use wLengthH,L
-        B0MOV     usb_setup_data_len_m, A
+        B0MOV     A, UDR0_R                           ; wLengthH < _usb_setup_data_len_m: use wLengthH,L
+        B0MOV     _usb_setup_data_len_m, A
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
-        B0MOV     usb_setup_data_len_l, A
+        B0MOV     _usb_setup_data_len_l, A
         JMP       _handle_get_descriptor_done
 @@:
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
-        ; the only important outcome is if wLengthL > usb_setup_data_len_l, a one's complement is enough
+        ; the only important outcome is if wLengthL > _usb_setup_data_len_l, a one's complement is enough
         XOR       A, #0xff
-        ADD       A, usb_setup_data_len_l
+        ADD       A, _usb_setup_data_len_l
         B0BTS0    FC
-        JMP       _handle_get_descriptor_done         ; usb_setup_data_len_l <= wLengthL: use usb_setup_data_len_l
+        JMP       _handle_get_descriptor_done         ; _usb_setup_data_len_l <= wLengthL: use _usb_setup_data_len_l
         B0MOV     A, UDR0_R                           ; else, use wLengthL
-        B0MOV     usb_setup_data_len_l, A
+        B0MOV     _usb_setup_data_len_l, A
 _handle_get_descriptor_done:
         B0BSET    _data_in_from_flash
         B0BCLR    FEP0SETUP
