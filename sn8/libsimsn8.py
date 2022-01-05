@@ -317,7 +317,9 @@ class USBDevice:
         cpu.usb.sendSETUP(request_type, request, value, index, length)
         self._waitForEP0EventsHandled(deadline)
         # Hardcoded max packet size, as it is fixed by spu for endpoint 0
-        return self._readEP(0, length, 8, deadline)
+        result = self._readEP(0, length, 8, deadline)
+        self._writeEP(0, b'', 8, deadline)
+        return result
 
     def controlWrite(self, request_type, request, value, index, data, timeout=5):
         cpu = self._cpu
@@ -327,7 +329,9 @@ class USBDevice:
         cpu.usb.sendSETUP(request_type, request, value, index, len(data))
         self._waitForEP0EventsHandled(deadline)
         # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
-        self._writeEP(0, data, 8, deadline)
+        if data:
+            self._writeEP(0, data, 8, deadline)
+        self._readEP(0, 0, 8, deadline)
 
     def readEP(self, endpoint, length, max_packet_size, timeout=5):
         return self._readEP(endpoint, length, max_packet_size, self._cpu.run_time + timeout)
