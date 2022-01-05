@@ -114,11 +114,11 @@ usb_handle: ; modifies: A, R, Y, Z
         B0BTS0    FBUS_RST
         JMP       _handle_reset
         B0BTS0    FSOF
-        JMP       usb_on_sof
+        JMP       _handle_sof
         B0BTS0    FPKTERR
-        JMP       usb_on_pkt_err
+        JMP       _handle_pkt_err
         B0BTS0    FCRCERR
-        JMP       usb_on_crc_err
+        JMP       _handle_crc_err
         RET
 
 ; Deffered stall of EP0
@@ -274,6 +274,21 @@ _handle_reset:
         CALL      usb_set_configuration     ; return value ignored
         JMP       usb_on_reset
         ; RET stolen from usb_on_reset
+
+_handle_sof:
+        CALL      usb_on_sof
+        B0BCLR    FSOF
+        RET
+
+_handle_pkt_err:
+        CALL      usb_on_pkt_err
+        B0BCLR    FPKTERR
+        RET
+
+_handle_crc_err:
+        CALL      usb_on_crc_err
+        B0BCLR    FCRCERR
+        RET
 
 _handle_get_status:
         ; All fields must be 0, except wLengthL wich must be 2 and wIndexL
