@@ -32,11 +32,11 @@
 ;   - usb_on_setupdata
 ;     Called when host initiated a non-standard SETUP request
 ;     (bmRequestType & 0x60 != 0).
-;     Expected to jump to usb_deferred_stall_ep0 if the request cannot be
+;     Expected to jump to usb_stall_ep0 if the request cannot be
 ;     handled, or return otherwise.
 ;   - usb_on_ep0_out
 ;     Called for the OUT data stage of a non-standard SETUP request.
-;     In the data stage, expected to jump to usb_deferred_stall_ep0 if the
+;     In the data stage, expected to jump to usb_stall_ep0 if the
 ;     data cannot be handled, or return otherwise.
 ;     In the status stage, expected to jump to usb_stall_ep0 if the request
 ;     cannot be handled, or to usb_ack_ep0 otherwise.
@@ -65,11 +65,10 @@ _has_pending_address    EQU _pending_address.7
 _bitmap0                DS  1
 _remote_wakeup_enabled  EQU _bitmap0.0
 _ep0_handoff            EQU _bitmap0.1
-_ep0_stall_next_stage   EQU _bitmap0.2
-_set_feature            EQU _bitmap0.3 ; 0 for CLEAR_FEATURE, 1 for SET_FEATURE
-_setup_data_out         EQU _bitmap0.4 ; 0 for IN data stage + OUT status stage
+_set_feature            EQU _bitmap0.2 ; 0 for CLEAR_FEATURE, 1 for SET_FEATURE
+_setup_data_out         EQU _bitmap0.3 ; 0 for IN data stage + OUT status stage
                                        ; 1 for optional OUT data stage and IN status stage
-_data_in_from_flash     EQU _bitmap0.5 ; 0 if IN transfer data is already in buffer
+_data_in_from_flash     EQU _bitmap0.4 ; 0 if IN transfer data is already in buffer
                                        ; 1 if it must be read from flash
 _usb_data_in_skip_low_byte  EQU _bitmap0.6
 _active_configuration       DS 1
@@ -121,40 +120,36 @@ usb_handle: ; modifies: A, R, Y, Z
         JMP       _handle_crc_err
         RET
 
-; Deffered stall of EP0
-; Should be used in SETUP or DATA stages, so that next DATA or STATUS stage STALLs.
-usb_deferred_stall_ep0:
-        B0BSET    _ep0_stall_next_stage
-        ; fall through
+; Call with number of bytes written to EP0 buffer in A (should be 0..8)
 usb_ack_ep0:
         B0BCLR    FEP0OUT
         B0BCLR    FEP0IN
         B0BCLR    FEP0SETUP
-        MOV       A, #0x20
+        AND       A, #0x0f
+        OR        A, #0x20 ; FUE0M0
         B0MOV     UE0R, A
         RET
 
-; Immediate stall of EP0
-; Should not be used in SETUP stage, only in DATA or STATUS stages.
 usb_stall_ep0:
+        B0BCLR    FEP0OUT
+        B0BCLR    FEP0IN
+        B0BCLR    FEP0SETUP
         B0BSET    FUE0M1
         RET
 
 _handle_ep0_out:
-        B0BTS0    _ep0_stall_next_stage
-        JMP       usb_stall_ep0
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_out
-        B0BTS1    _setup_data_out
-        JMP       usb_ack_ep0                   ; OUT status stage, ack
+        B0BTS0    _setup_data_out
         ; OUT data stage not needed for implemented standard requests
         JMP       usb_stall_ep0
+        MOV       A, #0
+        JMP       usb_ack_ep0                   ; OUT status stage, ack
 
 _handle_ep0_in:
-        B0BTS0    _ep0_stall_next_stage
-        JMP       usb_stall_ep0
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_in
+        MOV       A, #0
         B0BTS0    _setup_data_out
         JMP       usb_ack_ep0                   ; IN status stage, ack
         ; IN data stage
@@ -162,9 +157,7 @@ _handle_ep0_in:
         JMP       _load_ep0_buffer_from_flash
 _send_ep0_buffer:
         B0MOV     A, UDP0
-        AND       A, #0x0f
-        OR        A, #0x20
-        B0MOV     UE0R, A                   ; ACK
+        JMP       usb_ack_ep0
         B0BTS1    _has_pending_address
         RET
         B0MOV     A, _pending_address
@@ -230,7 +223,6 @@ _handle_setupdata:
         MOV       A, #0x00
         B0MOV     _usb_setup_data_len_l, A
         B0MOV     _usb_setup_data_len_m, A
-        B0BCLR    _ep0_stall_next_stage
         B0BCLR    _ep0_handoff
         B0BCLR    _setup_data_out
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
@@ -247,22 +239,22 @@ _handle_setupdata:
         B0MOV     A, UDR0_R
         SUB       A, #13
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0        ; bRequest > 12, stall
+        JMP       usb_stall_ep0             ; bRequest > 12, stall
         B0MOV     A, UDR0_R
         B0ADD     PCL, A
         JMP       _handle_get_status        ; 0
         JMP       _handle_clear_feature     ; 1
-        JMP       usb_deferred_stall_ep0    ; 2 reserved
+        JMP       usb_stall_ep0             ; 2 reserved
         JMP       _handle_set_feature       ; 3
-        JMP       usb_deferred_stall_ep0    ; 4 reserved
+        JMP       usb_stall_ep0             ; 4 reserved
         JMP       _handle_set_address       ; 5
         JMP       _handle_get_descriptor    ; 6
-        JMP       usb_deferred_stall_ep0    ; 7 SET_DESCRIPTOR (XXX: support ?)
+        JMP       usb_stall_ep0             ; 7 SET_DESCRIPTOR (XXX: support ?)
         JMP       _handle_get_configuration ; 8
         JMP       _handle_set_configuration ; 9
         JMP       _handle_get_interface     ; 10
         JMP       _handle_set_interface     ; 11
-        JMP       usb_deferred_stall_ep0    ; 12 SYNCH_FRAME, no ISO support
+        JMP       usb_stall_ep0             ; 12 SYNCH_FRAME, no ISO support
         ; unreachable
 
 _handle_reset:
@@ -297,36 +289,36 @@ _handle_get_status:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #2
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    UDR0_R.7
-        JMP       usb_deferred_stall_ep0        ; bmRequestType direction != IN
+        JMP       usb_stall_ep0        ; bmRequestType direction != IN
         AND       A, #0x7f
         SUB       A, #3
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0        ; bmRequestType recipient > 2
+        JMP       usb_stall_ep0        ; bmRequestType recipient > 2
         B0MOV     A, UDR0_R
         AND       A, #0x7f
         B0ADD     PCL, A
@@ -342,7 +334,7 @@ _handle_get_status:
         AND       A, #0x7f
         SUB       A, #5
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0        ; endpoint > 4
+        JMP       usb_stall_ep0        ; endpoint > 4
         B0MOV     R, #0x00
         B0MOV     A, UDR0_R
         AND       A, #0x7f
@@ -353,25 +345,25 @@ _handle_get_status:
         JMP       _handle_get_ep3_status
         ; handle get endpoint 4 status
         B0BTS1    FUE4EN
-        JMP       usb_deferred_stall_ep0        ; endpoint is disabled
+        JMP       usb_stall_ep0        ; endpoint is disabled
         B0BTS0    FUE4M1
         B0MOV     R, #0x01
         JMP       _respond_get_status
 _handle_get_ep1_status:
         B0BTS1    FUE1EN
-        JMP       usb_deferred_stall_ep0        ; endpoint is disabled
+        JMP       usb_stall_ep0        ; endpoint is disabled
         B0BTS0    FUE1M1
         B0MOV     R, #0x01
         JMP       _respond_get_status
 _handle_get_ep2_status:
         B0BTS1    FUE2EN
-        JMP       usb_deferred_stall_ep0        ; endpoint is disabled
+        JMP       usb_stall_ep0        ; endpoint is disabled
         B0BTS0    FUE2M1
         B0MOV     R, #0x01
         JMP       _respond_get_status
 _handle_get_ep3_status:
         B0BTS1    FUE3EN
-        JMP       usb_deferred_stall_ep0        ; endpoint is disabled
+        JMP       usb_stall_ep0        ; endpoint is disabled
         B0BTS0    FUE3M1
         B0MOV     R, #0x01
         JMP       _respond_get_status
@@ -380,7 +372,7 @@ _handle_get_device_status:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #0
         B0BTS0    _remote_wakeup_enabled
         OR        A, #0x02
@@ -392,7 +384,6 @@ _handle_get_interface_status:
         ; number)
         B0MOV     R, #0
 _respond_get_status:
-        B0BCLR    FEP0SETUP
         MOV       A, #0
         B0MOV     UDP0, A
         B0MOV     A, R
@@ -402,7 +393,6 @@ _respond_get_status:
         MOV       A, #0
         B0MOV     UDR0_W, A
         MOV       A, #2
-        B0MOV     UDP0, A
         JMP       usb_ack_ep0
 
 _handle_clear_feature:
@@ -413,43 +403,43 @@ _handle_set_clear_feature:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #2
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS0    UDR0_R.7
-        JMP       usb_deferred_stall_ep0        ; bmRequestType direction != OUT
+        JMP       usb_stall_ep0        ; bmRequestType direction != OUT
         AND       A, #0x7f
         SUB       A, #3
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0        ; bmRequestType recipient > 2
+        JMP       usb_stall_ep0        ; bmRequestType recipient > 2
         B0MOV     A, UDR0_R
         AND       A, #0x7f
         B0ADD     PCL, A
         JMP       _handle_set_clear_device_feature
-        JMP       usb_deferred_stall_ep0        ; interface: no standard feature
+        JMP       usb_stall_ep0        ; interface: no standard feature
         ; handle clear endpoint feature
         ; wValueL must be 0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
@@ -459,7 +449,7 @@ _handle_set_clear_feature:
         AND       A, #0x7f
         SUB       A, #5
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0        ; endpoint > 4
+        JMP       usb_stall_ep0        ; endpoint > 4
         B0MOV     A, UDR0_R
         AND       A, #0x7f
         B0ADD     PCL, A
@@ -475,7 +465,7 @@ _handle_set_clear_feature:
         JMP       _respond_set_clear_feature
 _handle_set_clear_ep0_stall:
         B0BTS0    _set_feature
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         JMP       _respond_set_clear_feature
 _handle_set_clear_ep1_stall:
         B0BTS0    _set_feature
@@ -496,6 +486,7 @@ _handle_set_clear_ep3_stall:
         B0BSET    FUE3M1
 _respond_set_clear_feature:
         B0BSET    _setup_data_out
+        MOV       A, #0
         JMP       usb_ack_ep0
 _handle_set_clear_device_feature:
         ; wValueL must be 1, test_mode is not supported.
@@ -503,7 +494,7 @@ _handle_set_clear_device_feature:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0BTS0    _set_feature
         B0BCLR    _remote_wakeup_enabled
         B0BTS1    _set_feature
@@ -520,40 +511,41 @@ _handle_set_address:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS0    UDR0_R.7
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         OR        A, #0x80
         B0MOV     _pending_address, A
         B0BSET    _setup_data_out
+        MOV       A, #0
         JMP       usb_ack_ep0
 
 _handle_get_descriptor:
@@ -561,7 +553,7 @@ _handle_get_descriptor:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x80
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
@@ -575,12 +567,12 @@ _handle_get_descriptor:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0MOV     A, R
         CMPRS     A, #USB_DT_CONFIG
         JMP       @F
@@ -591,10 +583,10 @@ _handle_get_descriptor:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0MOV     A, R
         CMPRS     A, #USB_DT_DEVICE
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0BSET    FC
         ; ABI:
         ; in: (nil)
@@ -656,7 +648,7 @@ _get_descriptor_length:
 
 _handle_get_descriptor_respond:
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
@@ -691,51 +683,49 @@ _handle_get_descriptor_respond:
         B0MOV     _usb_setup_data_len_l, A
 _handle_get_descriptor_done:
         B0BSET    _data_in_from_flash
-        JMP       usb_ack_ep0
+        JMP       _handle_ep0_in
 
 _handle_get_configuration:
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x80
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
-        B0BCLR    FEP0SETUP
+        JMP       usb_stall_ep0
         MOV       A, #0
         B0MOV     UDP0, A
         B0MOV     A, _active_configuration
         B0MOV     UDR0_W, A
         MOV       A, #1
-        B0MOV     UDP0, A
         JMP       usb_ack_ep0
 
 _handle_set_configuration:
@@ -743,32 +733,32 @@ _handle_set_configuration:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
@@ -780,41 +770,42 @@ _handle_set_configuration:
         B0BTS0    FC
         JMP       @F
         B0BSET    _setup_data_out
+        MOV       A, #0
         JMP       usb_ack_ep0
 @@:
         MOV       A, #0x00
         B0MOV     _active_configuration, A
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
 
 _handle_get_interface:
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x81
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_VALUE_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0MOV     A, _active_configuration
         B0BTS0    FZ
-        JMP       usb_deferred_stall_ep0        ; GET_INTERFACE on unconfigured device
+        JMP       usb_stall_ep0        ; GET_INTERFACE on unconfigured device
         B0BSET    FC
         ; ABI:
         ; in: (nil)
@@ -822,14 +813,12 @@ _handle_get_interface:
         ;      R contains the answer when FC cleared
         CALL      usb_get_interface
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0
-        B0BCLR    FEP0SETUP
+        JMP       usb_stall_ep0
         MOV       A, #0
         B0MOV     UDP0, A
         B0MOV     A, R
         B0MOV     UDR0_W, A
         MOV       A, #1
-        B0MOV     UDP0, A
         JMP       usb_ack_ep0
 
 _handle_set_interface:
@@ -837,26 +826,27 @@ _handle_set_interface:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         CMPRS     A, #0x01
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0BTS1    FZ
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0MOV     A, _active_configuration
         B0BTS0    FZ
-        JMP       usb_deferred_stall_ep0        ; SET_INTERFACE on unconfigured device
+        JMP       usb_stall_ep0        ; SET_INTERFACE on unconfigured device
         B0BSET    FC
         ; ABI:
         ; in: (nil)
         ; out: clear FC to ACK (default: stall)
         CALL      usb_set_interface
         B0BTS0    FC
-        JMP       usb_deferred_stall_ep0
+        JMP       usb_stall_ep0
         B0BSET    _setup_data_out
+        MOV       A, #0
         JMP       usb_ack_ep0
