@@ -385,14 +385,12 @@ class USB:
         start, stop = (
             0,
             8,
-            cpu.EP2FIFO_ADDR,
-            cpu.EP3FIFO_ADDR,
-            cpu.EP4FIFO_ADDR,
+            cpu.EP2FIFO_ADDR or 0x136,
+            cpu.EP3FIFO_ADDR or 0x136,
+            cpu.EP4FIFO_ADDR or 0x136,
             0x136,
         )[endpoint:endpoint + 2]
-        if stop == 0:
-            stop = 0x136
-        return start, stop
+        return start, max(start, stop)
 
     def send(self, endpoint, data):
         """
