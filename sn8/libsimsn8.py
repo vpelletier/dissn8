@@ -293,7 +293,9 @@ class USBDevice:
 
         No-op if the bus is already suspended.
         """
-        self._cpu.FSUSPEND = True
+        cpu = self._cpu
+        cpu.FSUSPEND = True
+        cpu.usb.next_sof_time = float('inf')
 
     def resume(self):
         """
@@ -301,8 +303,11 @@ class USBDevice:
 
         No-op if bus is already active.
         """
-        self._cpu.FSUSPEND = False
-        self._cpu.wake()
+        cpu = self._cpu
+        cpu.FSUSPEND = False
+        cpu.wake()
+        usb = cpu.usb
+        usb.next_sof_time = min(usb.next_sof_time, cpu.run_time + 1)
 
     def controlRead(self, request_type, request, value, index, length, timeout=5):
         cpu = self._cpu
