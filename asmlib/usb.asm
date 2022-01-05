@@ -125,7 +125,11 @@ usb_handle: ; modifies: A, R, Y, Z
 ; Should be used in SETUP or DATA stages, so that next DATA or STATUS stage STALLs.
 usb_deferred_stall_ep0:
         B0BSET    _ep0_stall_next_stage
+        ; fall through
 usb_ack_ep0:
+        B0BCLR    FEP0OUT
+        B0BCLR    FEP0IN
+        B0BCLR    FEP0SETUP
         MOV       A, #0x20
         B0MOV     UE0R, A
         RET
@@ -672,7 +676,6 @@ _handle_get_descriptor_respond:
         B0MOV     _usb_setup_data_len_l, A
 _handle_get_descriptor_done:
         B0BSET    _data_in_from_flash
-        B0BCLR    FEP0SETUP
         JMP       usb_ack_ep0
 
 _handle_get_configuration:
