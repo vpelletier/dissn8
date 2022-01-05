@@ -1193,7 +1193,12 @@ class SN8:
             if value is MISS:
                 raise ValueError('Nothing to read from at %#05x' % address)
         if value is None:
-            raise ValueError('Reading from uninitialised memory')
+            raise ValueError(
+                'Reading from uninitialised memory at %#04x (pc=%#06x)' % (
+                    address,
+                    self.pc,
+                )
+            )
         if address in self._read_watcher_dict:
             self._read_watcher_dict[address](self, address, value)
         assert value == (value & 0xff), repr(value)
