@@ -402,8 +402,7 @@ class USB:
         length = len(data)
         if length > stop - start:
             raise ValueError('Data too long for endpoint buffer')
-        for index, value in enumerate(data, start):
-            self.epbuf[index] = value
+        self.epbuf[start:start + length] = data
         if endpoint == 0:
             cpu.FUE0M0 = 0
             cpu.EP0OUT_CNT = length
