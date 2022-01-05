@@ -295,13 +295,10 @@ class USB:
             cpu_time - self.device_se0_start_time > 1 # Wake signaling to host after 1ms
         ):
             self.on_wake_signaling()
-        if (
-            cpu.FSOF_INT_EN and
-            cpu_time > self.next_sof_time # Full-speed SOFs are every 1ms
-        ):
-            cpu.FSOF = 1
-            self.next_sof_time = cpu_time + 1
-            self._interrupt()
+        if cpu_time > self.next_sof_time: # Full-speed SOFs are every 1ms
+            self.next_sof_time += 1
+            if cpu.FSOF_INT_EN: # XXX: hardcoded IEN flag
+                cpu.FSOF = 1
 
     def _interrupt(self):
         setattr(self.cpu, self.irq_name, 1)
