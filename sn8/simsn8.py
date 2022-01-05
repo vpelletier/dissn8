@@ -309,6 +309,15 @@ class USB:
             raise RuntimeError('USB is disabled by firmware')
         if cpu.FEP0SETUP:
             raise EndpointNAK
+        if cpu.FUE0M0:
+            warnings.warn(
+                'Firmware or emulation bug: '
+                'FUE0M0 is still set when starting a SETUP transaction'
+            )
+            # XXX: clearing FUE0M0 is not documented, but:
+            # - not clearing it when setting FEP0SETUP makes not sense
+            # - it seems required in order to run the ks1255 original firmware
+            cpu.FUE0M0 = 0
         self.epbuf[0] = request_type
         self.epbuf[1] = request
         self.epbuf[2] = value & 0xff
@@ -317,8 +326,7 @@ class USB:
         self.epbuf[5] = (index >> 8) & 0xff
         self.epbuf[6] = length & 0xff
         self.epbuf[7] = (length >> 8) & 0xff
-        cpu.FUE0M0 = 0
-        cpu.FUE0M1 = 0
+        cpu.FUE0M1 = 0 # EP0 auto-clears STALL
         cpu.FEP0SETUP = 1
         self._interrupt()
 
