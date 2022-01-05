@@ -433,16 +433,26 @@ class USB:
         """
         cpu = self.cpu
         start, stop = self._checkEndpoint(endpoint)
-        length = min(
-            (
-                cpu.UE0R & 0x0f,
-                cpu.UE1R_C,
-                cpu.UE2R_C,
-                cpu.UE3R_C,
-                cpu.UE4R_C,
-            )[endpoint],
-            stop - start,
-        )
+        buffer_length = stop - start
+        if endpoint == 0:
+            length = cpu.UE0R & 0x0f
+        elif endpoint == 1:
+            length = cpu.UE1R_C
+        elif endpoint == 2:
+            length = cpu.UE2R_C
+        elif endpoint == 3:
+            length = cpu.UE3R_C
+        elif endpoint == 4:
+            length = cpu.UE4R_C
+        if length > buffer_length:
+            warnings.warn(
+                'Firmware wrote %i bytes in a %i bytes buffer, using buffer '
+                'length' % (
+                    byte_count,
+                    buffer_length,
+                ),
+            )
+            length = buffer_length
         result = bytes(self.epbuf[start:start + length])
         # XXX: FEP?_ACK only for INT transfers ?
         if endpoint == 0:
