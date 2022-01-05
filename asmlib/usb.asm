@@ -77,6 +77,7 @@ usb_descriptor_pointer_l    DS 1
 usb_descriptor_pointer_m    DS 1
 _usb_setup_data_len_l       DS 1
 _usb_setup_data_len_m       DS 1
+_scratch                    DS 1 ; for emulating "B0ADD A, Address"
 
 USB_DT_DEVICE             EQU 0x01
 USB_DT_CONFIG             EQU 0x02
@@ -262,7 +263,7 @@ _handle_setupdata:
 
 _handle_reset:
         CALL      usb_init
-        MOV       A, UDA
+        B0MOV     A, UDA
         AND       A, #0x80
         B0MOV     UDA, A
         MOV       A, #0x00
@@ -591,10 +592,10 @@ _get_configuration_descriptor:
         ; out: (see usb_get_string_descriptor_address)
         CALL      usb_get_configuration_descriptor_address
         ; get length from wTotalLength
-        MOV       A, usb_descriptor_pointer_l
+        B0MOV     A, usb_descriptor_pointer_l
         MOV       A, #1 ; wTotalLength is 1 word after descriptor start
         B0MOV     Z, A
-        MOV       A, usb_descriptor_pointer_m
+        B0MOV     A, usb_descriptor_pointer_m
         B0BTS0    FC
         ADD       A, #1
         B0MOV     Y, A
@@ -615,9 +616,9 @@ _usb_get_string_descriptor:
         ; descriptor is expected packed in flash.
         CALL      usb_get_string_descriptor_address
 _get_descriptor_length:
-        MOV       A, usb_descriptor_pointer_l
+        B0MOV     A, usb_descriptor_pointer_l
         B0MOV     Z, A
-        MOV       A, usb_descriptor_pointer_m
+        B0MOV     A, usb_descriptor_pointer_m
         B0MOV     Y, A
         MOVC
         B0MOV     _usb_setup_data_len_l, A
@@ -642,7 +643,9 @@ _handle_get_descriptor_respond:
         B0MOV     A, UDR0_R
         XOR       A, #0xff
         ADD       A, #1
-        ADD       A, _usb_setup_data_len_m
+        B0MOV     _scratch, A
+        B0MOV     A, _usb_setup_data_len_m
+        B0ADD     _scratch, A
         B0BTS0    FC
         JMP       _handle_get_descriptor_done         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
         B0BTS0    FZ
@@ -660,8 +663,10 @@ _handle_get_descriptor_respond:
         B0MOV     A, UDR0_R
         ; the only important outcome is if wLengthL > _usb_setup_data_len_l, a one's complement is enough
         XOR       A, #0xff
-        ADD       A, _usb_setup_data_len_l
-        B0BTS0    FC
+        B0MOV     _scratch, A
+        B0MOV     A, _usb_setup_data_len_l
+        B0ADD     _scratch, A
+        B0BTS1    FC
         JMP       _handle_get_descriptor_done         ; _usb_setup_data_len_l <= wLengthL: use _usb_setup_data_len_l
         B0MOV     A, UDR0_R                           ; else, use wLengthL
         B0MOV     _usb_setup_data_len_l, A
