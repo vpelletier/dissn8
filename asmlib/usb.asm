@@ -555,12 +555,12 @@ _handle_get_descriptor:
         MOV       A, #UDPR0_ADDRESS_W_INDEX_H
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
-        B0BTS0    FZ
+        B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
         MOV       A, #UDPR0_ADDRESS_W_INDEX_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
-        B0BTS0    FZ
+        B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
         B0MOV     A, R
         CMPRS     A, #USB_DT_CONFIG
@@ -571,7 +571,7 @@ _handle_get_descriptor:
         MOV       A, #UDPR0_ADDRESS_W_VALUE_L
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
-        B0BTS0    FZ
+        B0BTS1    FZ
         JMP       usb_deferred_stall_ep0
         B0MOV     A, R
         CMPRS     A, #USB_DT_DEVICE
