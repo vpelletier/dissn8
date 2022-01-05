@@ -316,7 +316,7 @@ class USBDevice:
         request_type |= 0x80
         cpu.usb.sendSETUP(request_type, request, value, index, length)
         self._waitForEP0EventsHandled(deadline)
-        # Hardcoded max packet size, as it is fixed by spu for endpoint 0
+        # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
         result = self._readEP(0, length, 8, deadline)
         self._writeEP(0, b'', 8, deadline)
         return result
