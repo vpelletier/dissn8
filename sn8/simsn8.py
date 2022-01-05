@@ -65,6 +65,7 @@ class BitProperty:
         return (instance.read(self.address) >> self.bit) & 1
 
     def __set__(self, instance, value):
+        # XXX: should probably not trigger read watchers
         whole_value = instance.read(self.address)
         if value:
             whole_value |= self._set_mask
@@ -168,6 +169,7 @@ class USB:
             'ep2enable': self.ep2enable,
             'ep3enable': self.ep3enable,
             'ep4enable': self.ep4enable,
+            # TODO: next_sof_time, ...
         }
 
     def setState(self, state):
