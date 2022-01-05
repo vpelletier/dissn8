@@ -70,13 +70,13 @@ _setup_data_out         EQU _bitmap0.3 ; 0 for IN data stage + OUT status stage
                                        ; 1 for optional OUT data stage and IN status stage
 _data_in_from_flash     EQU _bitmap0.4 ; 0 if IN transfer data is already in buffer
                                        ; 1 if it must be read from flash
-_usb_data_in_skip_low_byte  EQU _bitmap0.6
 _active_configuration       DS 1
 usb_descriptor_pointer_l    DS 1
 usb_descriptor_pointer_m    DS 1
 _usb_setup_data_len_l       DS 1
 _usb_setup_data_len_m       DS 1
 _scratch                    DS 1 ; for emulating "B0ADD A, Address"
+_bytes_to_write             DS 1
 
 USB_DT_DEVICE             EQU 0x01
 USB_DT_CONFIG             EQU 0x02
@@ -155,15 +155,15 @@ _handle_ep0_in:
         ; IN data stage
         B0BTS0    _data_in_from_flash
         JMP       _load_ep0_buffer_from_flash
-_send_ep0_buffer:
-        B0MOV     A, UDP0
-        JMP       usb_ack_ep0
         B0BTS1    _has_pending_address
-        RET
+        JMP       usb_stall_ep0
         B0MOV     A, _pending_address
         B0MOV     UDA, A                    ; Finalise address change
         B0BCLR    _has_pending_address
-        RET
+        JMP       usb_ack_ep0
+_send_ep0_buffer:
+        B0MOV     A, UDP0
+        JMP       usb_ack_ep0
 _load_ep0_buffer_from_flash:
         B0MOV     A, usb_descriptor_pointer_m
         B0MOV     Y, A
@@ -171,46 +171,66 @@ _load_ep0_buffer_from_flash:
         B0MOV     Z, A
         MOV       A, #0x00
         B0MOV     UDP0, A
-        B0BCLR    _usb_data_in_skip_low_byte
-_load_ep0_buffer_from_flash_loop:
-        ; any byte left to send ?
         B0MOV     A, _usb_setup_data_len_l
-        B0BTS1    FZ
-        JMP       @F
-        B0MOV     A, _usb_setup_data_len_m      ; l is zero, check h
-        B0BTS0    FZ
-        JMP       _load_ep0_buffer_from_flash_exit ; h & l are zero, loop is over
-        MOV       A, #0xff                  ; -1
-        B0ADD     _usb_setup_data_len_m, A
-@@:
-        MOV       A, #0xff                  ; -1
+        B0MOV     R, A
+        ; _usb_setup_data_len_l -= 8
+        MOV       A, #0xf8 ; -8
         B0ADD     _usb_setup_data_len_l, A
-        ; which byte should be sent ?
-        B0BTS1    _usb_data_in_skip_low_byte
+        B0BTS1    FC ; if (signed) _usb_setup_data_len_l >= 0
         JMP       @F
-        MOV       A, #1                     ; move pointer to next word
+        MOV       A, #8 ; 8 bytes to send
+        JMP       _load_ep0_buffer_from_flash_loop
+@@:
+        ; _usb_setup_data_len_m -= 1
+        MOV       A, #0xff ; -1
+        B0ADD     _usb_setup_data_len_m, A
+        B0BTS1    FC ; if (signed) _usb_setup_data_len_m >= 0
+        JMP       @F
+        MOV       A, #8 ; 8 bytes to send
+        JMP       _load_ep0_buffer_from_flash_loop
+@@:
+        ; Nothing to send after this call, zero-out _usb_setup_data_len_*
+        MOV       A, #0
+        B0MOV     _usb_setup_data_len_l, A
+        B0MOV     _usb_setup_data_len_m, A
+        ; Load original _usb_setup_data_len_l value as number of bytes to send
+        B0MOV     A, R
+        B0BTS0    FZ ; is there anything to send at all ?
+        JMP       _load_ep0_buffer_from_flash_exit
+_load_ep0_buffer_from_flash_loop:
+        B0MOV     _bytes_to_write, A
+@@:
+        ; Write 2 bytes to endpoint buffer per iteration.
+        ; Load 2 bytes from flash
+        MOVC
+        ; Write A to buffer
+        B0MOV     UDR0_W, A
+        ; advance buffer pointer (also used as bytes-to-send counter)
+        MOV       A, #1
+        B0ADD     UDP0, A
+        ; Is there more to write ?
+        MOV       A, #0xff                  ; -1
+        B0ADD     _bytes_to_write, A
+        B0BTS0    FZ
+        JMP       _load_ep0_buffer_from_flash_exit
+        ; Yes, write R to buffer
+        B0MOV     A, R
+        B0MOV     UDR0_W, A
+        ; advance buffer pointer (also used as bytes-to-send counter)
+        MOV       A, #1
+        B0ADD     UDP0, A
+        ; Is there more to write ?
+        MOV       A, #0xff                  ; -1
+        B0ADD     _bytes_to_write, A
+        B0BTS0    FZ
+        JMP       _load_ep0_buffer_from_flash_exit
+        ; Yes, advance flash pointer...
+        MOV       A, #1
         B0ADD     Z, A
         B0BTS0    FC
         B0ADD     Y, A
-        B0MOV     A, R                      ; and select high byte for write
-        JMP       _load_ep0_buffer_from_flash_write_ep0_buf
-@@:
-        MOVC                                ; read new word & select low byte for write
-_load_ep0_buffer_from_flash_write_ep0_buf:
-        ; write byte to EP0 buffer and advance its pointer
-        B0MOV     UDR0_W, A
-        B0MOV     A, UDP0
-        ADD       A, #1
-        B0MOV     UDP0, A
-        ; switch to the other byte for next iteration
-        B0BTS0    _usb_data_in_skip_low_byte
-        JMP       @F
-        B0BSET    _usb_data_in_skip_low_byte
-@@:
-        B0BCLR    _usb_data_in_skip_low_byte
-        ; is there room left in EP0 buffer ?
-        CMPRS     A, #8
-        JMP       _load_ep0_buffer_from_flash_loop
+        ; ...and go to next iteration
+        JMP       @B
 _load_ep0_buffer_from_flash_exit:
         ; done, update flash pointer for next send
         B0MOV     A, Y
