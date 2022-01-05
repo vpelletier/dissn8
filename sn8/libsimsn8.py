@@ -347,7 +347,8 @@ class USBDevice:
             self._waitForAckOrStall(endpoint, deadline)
             chunk = recv(endpoint)
             result += chunk
-            if len(result) == length or len(chunk) < max_packet_size:
+            if len(chunk) < max_packet_size:
+                assert len(result) <= length, (length, repr(result))
                 break
         return result
 
