@@ -369,7 +369,7 @@ _handle_get_ep2_status:
         B0BTS0    FUE2M1
         B0MOV     R, #0x01
         JMP       _respond_get_status
-_handle_get_ep3_status:        
+_handle_get_ep3_status:
         B0BTS1    FUE3EN
         JMP       usb_deferred_stall_ep0        ; endpoint is disabled
         B0BTS0    FUE3M1
