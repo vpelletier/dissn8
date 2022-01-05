@@ -498,8 +498,9 @@ def main():
         3 * 1 + # padding
         2 * 8 + # axes
         1 * 8 + # wheel
-        1 * 8   # hwheel
-    ) / 8 # XXX: should HID config_descriptor
+        1 * 8 + # hwheel
+        1 * 8   # ?
+    ) / 8 # XXX: should parse HID config_descriptor
     assert int(report_1_length) == report_1_length, report_1_length
     report_1_length = int(report_1_length)
     try:
