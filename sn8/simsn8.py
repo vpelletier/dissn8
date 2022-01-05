@@ -331,57 +331,45 @@ class USB:
         self._interrupt()
 
     def _checkEndpoint(self, endpoint):
+        """
+        Check whether given endpoint accepts an I/O operation.
+        If USB or endpoint is disabled, raises RuntimeError.
+        If it STALLs, raises EndpointStall.
+        If if NAKs, raises EndpointNAK.
+        Otherwise, return the start and stop offset in endpoint buffer.
+
+        It is the caller's responsibility to re-arm NAKs (and STALL for EP0)
+        if an I/O does happen.
+        """
         cpu = self.cpu
         if not cpu.FUDE:
             raise RuntimeError('USB is disabled')
         if endpoint == 0:
             enabled = True
-            stall               = cpu.FUE0M1
-            ack                 = cpu.FUE0M0
-            has_pending_events = cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT
-            nak_int_en = False
+            stall   = cpu.FUE0M1
+            ack     = cpu.FUE0M0 and not cpu.FEP0SETUP
         elif endpoint == 1:
-            enabled             = cpu.FUE1EN
-            stall               = cpu.FUE1M1
-            ack                 = cpu.FUE1M0
-            has_pending_events  = cpu.FEP1_ACK or cpu.FEP1_NAK
-            nak_int_en          = cpu.FEP1NAK_INT_EN
+            enabled = cpu.FUE1EN
+            stall   = cpu.FUE1M1
+            ack     = cpu.FUE1M0
         elif endpoint == 2:
-            enabled             = cpu.FUE2EN
-            stall               = cpu.FUE2M1
-            ack                 = cpu.FUE2M0
-            has_pending_events  = cpu.FEP2_ACK or cpu.FEP2_NAK
-            nak_int_en          = cpu.FEP2NAK_INT_EN
+            enabled = cpu.FUE2EN
+            stall   = cpu.FUE2M1
+            ack     = cpu.FUE2M0
         elif endpoint == 3:
-            enabled             = cpu.FUE3EN
-            stall               = cpu.FUE3M1
-            ack                 = cpu.FUE3M0
-            has_pending_events  = cpu.FEP3_ACK or cpu.FEP3_NAK
-            nak_int_en          = cpu.FEP3NAK_INT_EN
+            enabled = cpu.FUE3EN
+            stall   = cpu.FUE3M1
+            ack     = cpu.FUE3M0
         elif endpoint == 4:
-            enabled             = cpu.FUE4EN
-            stall               = cpu.FUE4M1
-            ack                 = cpu.FUE4M0
-            has_pending_events  = cpu.FEP4_ACK or cpu.FEP4_NAK
-            nak_int_en          = cpu.FEP4NAK_INT_EN
+            enabled = cpu.FUE4EN
+            stall   = cpu.FUE4M1
+            ack     = cpu.FUE4M0
         if not enabled:
             raise RuntimeError('Endpoint is disabled')
         if stall:
             raise EndpointStall
         if not ack:
-            if nak_int_en:
-                if endpoint == 1:
-                    cpu.FEP1_NAK = 1
-                elif endpoint == 2:
-                    cpu.FEP2_NAK = 1
-                elif endpoint == 3:
-                    cpu.FEP3_NAK = 1
-                elif endpoint == 4:
-                    cpu.FEP4_NAK = 1
-                self._interrupt()
             raise EndpointNAK
-        if has_pending_events:
-            raise RuntimeError('Endpoint accepts transfer but firmware did not clear pending events')
         start, stop = (
             0,
             8,
@@ -410,19 +398,15 @@ class USB:
         elif endpoint == 1:
             cpu.FUE1M0 = 0
             cpu.UE1R_C = length
-            cpu.FEP1_ACK = 1
         elif endpoint == 2:
             cpu.FUE2M0 = 0
             cpu.UE2R_C = length
-            cpu.FEP2_ACK = 1
         elif endpoint == 3:
             cpu.FUE3M0 = 0
             cpu.UE3R_C = length
-            cpu.FEP3_ACK = 1
         elif endpoint == 4:
             cpu.FUE4M0 = 0
             cpu.UE4R_C = length
-            cpu.FEP4_ACK = 1
         self._interrupt()
 
     def recv(self, endpoint):
@@ -454,24 +438,56 @@ class USB:
             )
             length = buffer_length
         result = bytes(self.epbuf[start:start + length])
-        # XXX: FEP?_ACK only for INT transfers ?
         if endpoint == 0:
             cpu.FUE0M0 = 0
             cpu.FEP0IN = 1
         elif endpoint == 1:
             cpu.FUE1M0 = 0
-            cpu.FEP1_ACK = 1
         elif endpoint == 2:
             cpu.FUE2M0 = 0
-            cpu.FEP2_ACK = 1
         elif endpoint == 3:
             cpu.FUE3M0 = 0
-            cpu.FEP3_ACK = 1
         elif endpoint == 4:
             cpu.FUE4M0 = 0
-            cpu.FEP4_ACK = 1
         self._interrupt()
         return result
+
+    def setINHandshake(self, endpoint, ack=True):
+        """
+        IN transaction handshake.
+        """
+        if endpoint == 0:
+            interrupt = False
+        else:
+            if ack:
+                interrupt = False
+                if endpoint == 1:
+                    cpu.FEP1_ACK = 1
+                elif endpoint == 2:
+                    cpu.FEP2_ACK = 1
+                elif endpoint == 3:
+                    cpu.FEP3_ACK = 1
+                elif endpoint == 4:
+                    cpu.FEP4_ACK = 1
+                else:
+                    raise ValueError('Invalid endpoint')
+            else:
+                if endpoint == 1:
+                    cpu.FEP1_NAK = 1
+                    interrupt = cpu.FEP1_NACK_INT_EN
+                elif endpoint == 2:
+                    cpu.FEP2_NAK = 1
+                    interrupt = cpu.FEP2_NACK_INT_EN
+                elif endpoint == 3:
+                    cpu.FEP3_NAK = 1
+                    interrupt = cpu.FEP3_NACK_INT_EN
+                elif endpoint == 4:
+                    cpu.FEP4_NAK = 1
+                    interrupt = cpu.FEP4_NACK_INT_EN
+                else:
+                    raise ValueError('Invalid endpoint')
+        if interrupt:
+            self._interrupt()
 
     def readToggle(self):
         return self.toggle
