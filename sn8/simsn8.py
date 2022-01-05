@@ -307,8 +307,8 @@ class USB:
         cpu = self.cpu
         if not cpu.FUDE:
             raise RuntimeError('USB is disabled by firmware')
-        if cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT:
-            raise RuntimeError('Firmware has unhandled EP0 events')
+        if cpu.FEP0SETUP:
+            raise EndpointNAK
         self.epbuf[0] = request_type
         self.epbuf[1] = request
         self.epbuf[2] = value & 0xff
