@@ -437,6 +437,8 @@ class USBDevice:
         )
 
     def setAddress(self, address, timeout=5):
+        cpu = self._cpu
+        deadline = cpu.run_time + timeout
         self.controlWrite(
             0,
             5,
@@ -445,3 +447,10 @@ class USBDevice:
             b'',
             timeout,
         )
+        step = self._step
+        while cpu.UDA & 0x7f != address and cpu.run_time < deadline:
+            step()
+        if cpu.run_time >= deadline:
+            raise ValueError(
+                'Timeout reached waiting for new address to be applied',
+            )
