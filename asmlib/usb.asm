@@ -87,6 +87,8 @@ USB_DT_HID                EQU 0x21
 USB_DT_REPORT             EQU 0x22
 USB_DT_PHYSICAL           EQU 0x23
 
+USB_EP0_MAX_PACKET_SIZE   EQU 8
+
 .CODE
 ; Initialises usb-related variables (not registers)
 usb_init: ; modifies: A
@@ -178,7 +180,7 @@ _load_ep0_buffer_from_flash:
         B0ADD     _usb_setup_data_len_l, A
         B0BTS1    FC ; if (signed) _usb_setup_data_len_l >= 0
         JMP       @F
-        MOV       A, #8 ; 8 bytes to send
+        MOV       A, #USB_EP0_MAX_PACKET_SIZE
         JMP       _load_ep0_buffer_from_flash_loop
 @@:
         ; _usb_setup_data_len_m -= 1
@@ -186,7 +188,7 @@ _load_ep0_buffer_from_flash:
         B0ADD     _usb_setup_data_len_m, A
         B0BTS1    FC ; if (signed) _usb_setup_data_len_m >= 0
         JMP       @F
-        MOV       A, #8 ; 8 bytes to send
+        MOV       A, #USB_EP0_MAX_PACKET_SIZE
         JMP       _load_ep0_buffer_from_flash_loop
 @@:
         ; Nothing to send after this call, zero-out _usb_setup_data_len_*
