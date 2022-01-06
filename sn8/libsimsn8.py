@@ -245,8 +245,6 @@ class USBDevice:
         step = self._step
         while (cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT) and cpu.run_time < deadline:
             step()
-        if cpu.run_time >= deadline:
-            raise ValueError('Timeout reached')
 
     def _waitForAckOrStall(self, endpoint, deadline):
         cpu = self._cpu
