@@ -47,17 +47,17 @@
 ;   - does rely on host following proper transaction sequence (one OUT & IN max
 ;     per SETUP transaction, consistently with bmRequestType.7)
 ; - modifies A, R, Y, Z
-; - needs 7 bytes in page zero
+; - needs 17 bytes in page zero
 
 .DATA
-UDPR0_ADDRESS_BM_REQUEST_TYPE EQU 0
-UDPR0_ADDRESS_B_REQUEST       EQU 1
-UDPR0_ADDRESS_W_VALUE_L       EQU 2
-UDPR0_ADDRESS_W_VALUE_H       EQU 3
-UDPR0_ADDRESS_W_INDEX_L       EQU 4
-UDPR0_ADDRESS_W_INDEX_H       EQU 5
-UDPR0_ADDRESS_W_LENGTH_L      EQU 6
-UDPR0_ADDRESS_W_LENGTH_H      EQU 7
+_UDPR0_ADDRESS_BM_REQUEST_TYPE EQU 0
+_UDPR0_ADDRESS_B_REQUEST       EQU 1
+_UDPR0_ADDRESS_W_VALUE_L       EQU 2
+_UDPR0_ADDRESS_W_VALUE_H       EQU 3
+_UDPR0_ADDRESS_W_INDEX_L       EQU 4
+_UDPR0_ADDRESS_W_INDEX_H       EQU 5
+_UDPR0_ADDRESS_W_LENGTH_L      EQU 6
+_UDPR0_ADDRESS_W_LENGTH_H      EQU 7
 
 _pending_address        DS  1
 ; Bit 7 is actually FUDE, making it a handy flag to detect SET_ADDRESS(0)
@@ -75,6 +75,15 @@ _usb_setup_data_len_l       DS 1
 _usb_setup_data_len_m       DS 1
 _scratch                    DS 1 ; for emulating "B0ADD A, Address"
 _bytes_to_write             DS 1
+
+usb_setup_request_type      DS 1
+usb_setup_request           DS 1
+usb_setup_value_l           DS 1
+usb_setup_value_h           DS 1
+usb_setup_index_l           DS 1
+usb_setup_index_h           DS 1
+usb_setup_length_l          DS 1
+usb_setup_length_h          DS 1
 
 USB_DT_DEVICE             EQU 0x01
 USB_DT_CONFIG             EQU 0x02
@@ -124,7 +133,6 @@ usb_handle: ; modifies: A, R, Y, Z
 usb_ack_ep0:
         B0BCLR    FEP0OUT
         B0BCLR    FEP0IN
-        B0BCLR    FEP0SETUP
         AND       A, #0x0f
         OR        A, #0x20 ; FUE0M0
         B0MOV     UE0R, A
@@ -133,7 +141,6 @@ usb_ack_ep0:
 usb_stall_ep0:
         B0BCLR    FEP0OUT
         B0BCLR    FEP0IN
-        B0BCLR    FEP0SETUP
         B0BSET    FUE0M1
         RET
 
@@ -241,27 +248,57 @@ _load_ep0_buffer_from_flash_exit:
         JMP       usb_ack_ep0
 
 _handle_setupdata:
+        MOV       A, #_UDPR0_ADDRESS_BM_REQUEST_TYPE
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_request_type, A
+        MOV       A, #_UDPR0_ADDRESS_B_REQUEST
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_request, A
+        MOV       A, #_UDPR0_ADDRESS_W_VALUE_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_value_l, A
+        MOV       A, #_UDPR0_ADDRESS_W_VALUE_H
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_value_h, A
+        MOV       A, #_UDPR0_ADDRESS_W_INDEX_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_index_l, A
+        MOV       A, #_UDPR0_ADDRESS_W_INDEX_H
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_index_h, A
+        MOV       A, #_UDPR0_ADDRESS_W_LENGTH_L
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_length_l, A
+        MOV       A, #_UDPR0_ADDRESS_W_LENGTH_H
+        B0MOV     UDP0, A
+        B0MOV     A, UDR0_R
+        B0MOV     usb_setup_length_h, A
+        B0BCLR    FEP0SETUP
+
         MOV       A, #0x00
         B0MOV     _usb_setup_data_len_l, A
         B0MOV     _usb_setup_data_len_m, A
         B0BCLR    _ep0_handoff
         B0BCLR    _setup_data_out
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         AND       A, #0x60
         B0BTS0    FZ
         JMP       @F
         B0BSET    _ep0_handoff              ; Non-standard setup request, hand-off to firmware
         JMP       usb_on_setupdata
 @@:
-        MOV       A, #UDPR0_ADDRESS_B_REQUEST
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request
         SUB       A, #13
         B0BTS0    FC
         JMP       usb_stall_ep0             ; bRequest > 12, stall
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request
         B0ADD     PCL, A
         JMP       _handle_get_status        ; 0
         JMP       _handle_clear_feature     ; 1
@@ -306,49 +343,35 @@ _handle_crc_err:
 _handle_get_status:
         ; All fields must be 0, except wLengthL wich must be 2 and wIndexL
         ; which depends on bmRequestType.
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         CMPRS     A, #2
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
-        B0BTS1    UDR0_R.7
+        B0MOV     A, usb_setup_request_type
+        B0BTS1    usb_setup_request_type.7
         JMP       usb_stall_ep0        ; bmRequestType direction != IN
         AND       A, #0x7f
         SUB       A, #3
         B0BTS0    FC
         JMP       usb_stall_ep0        ; bmRequestType recipient > 2
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         AND       A, #0x7f
         B0ADD     PCL, A
         JMP       _handle_get_device_status
         JMP       _handle_get_interface_status
         ; handle get endpoint status
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         ; XXX: ignore endpoint direction bit. There is no easy way to know the
         ; direction of each endpoint (requires peeking at descriptors of active
         ; configuration...). Hand-over to firmware ?
@@ -357,8 +380,7 @@ _handle_get_status:
         B0BTS0    FC
         JMP       usb_stall_ep0        ; endpoint > 4
         B0MOV     R, #0x00
-        B0MOV     A, UDR0_R
-        AND       A, #0x7f
+        ADD       A, #5                ; get A back to UDR0_R & #0x7f
         B0ADD     PCL, A
         JMP       _respond_get_status ; EP0 stall should always auto-clear
         JMP       _handle_get_ep1_status
@@ -389,9 +411,7 @@ _handle_get_ep3_status:
         B0MOV     R, #0x01
         JMP       _respond_get_status
 _handle_get_device_status:
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
         MOV       A, #0
@@ -420,50 +440,36 @@ _handle_clear_feature:
         B0BCLR    _set_feature
 _handle_set_clear_feature:
         ; wIndexH, wValueH and wLength must be zero.
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         CMPRS     A, #2
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
-        B0BTS0    UDR0_R.7
+        B0MOV     A, usb_setup_request_type
+        B0BTS0    usb_setup_request_type.7
         JMP       usb_stall_ep0        ; bmRequestType direction != OUT
         AND       A, #0x7f
         SUB       A, #3
         B0BTS0    FC
         JMP       usb_stall_ep0        ; bmRequestType recipient > 2
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         AND       A, #0x7f
         B0ADD     PCL, A
         JMP       _handle_set_clear_device_feature
         JMP       usb_stall_ep0        ; interface: no standard feature
         ; handle clear endpoint feature
         ; wValueL must be 0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         ; XXX: ignore endpoint direction bit. There is no easy way to know the
         ; direction of each endpoint (requires peeking at descriptors of active
         ; configuration...). Hand-over to firmware ?
@@ -512,9 +518,7 @@ _respond_set_clear_feature:
         JMP       usb_ack_ep0
 _handle_set_clear_device_feature:
         ; wValueL must be 1, test_mode is not supported.
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         CMPRS     A, #0x01
         JMP       usb_stall_ep0
         B0BTS0    _set_feature
@@ -529,40 +533,26 @@ _handle_set_feature:
 
 _handle_set_address:
         ; All fields must be zero, except UDPR0_ADDRESS_W_VALUE_L which must be 0..127
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
-        B0BTS0    UDR0_R.7
+        B0MOV     A, usb_setup_value_l
+        B0BTS0    usb_setup_value_l.7
         JMP       usb_stall_ep0
         OR        A, #0x80
         B0MOV     _pending_address, A
@@ -571,28 +561,20 @@ _handle_set_address:
         JMP       usb_ack_ep0
 
 _handle_get_descriptor:
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         CMPRS     A, #0x80
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         CMPRS     A, #USB_DT_STRING
         JMP       @F
         JMP       _usb_get_string_descriptor
 @@:
         B0MOV     R, A
         ; Not a string descriptor, wIndex must be zero
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
         B0MOV     A, R
@@ -601,9 +583,7 @@ _handle_get_descriptor:
         JMP       _get_configuration_descriptor
 @@:
         ; Not a configuration descriptor, wValueL must be zero
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
         B0MOV     A, R
@@ -616,9 +596,7 @@ _handle_get_descriptor:
         CALL      usb_get_device_descriptor_address
         JMP       _get_descriptor_length
 _get_configuration_descriptor:
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BSET    FC
         ; ABI:
         ; in: A: descriptor index
@@ -638,9 +616,7 @@ _get_configuration_descriptor:
         B0MOV     _usb_setup_data_len_m, A
         JMP       _handle_get_descriptor_respond
 _usb_get_string_descriptor:
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BSET    FC
         ; ABI:
         ; in: A: descriptor index
@@ -671,9 +647,7 @@ _get_descriptor_length:
 _handle_get_descriptor_respond:
         B0BTS0    FC
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         XOR       A, #0xff
         ADD       A, #1
         B0MOV     _scratch, A
@@ -683,17 +657,13 @@ _handle_get_descriptor_respond:
         JMP       _load_ep0_buffer_from_flash         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
         B0BTS0    FZ
         JMP       @F                                  ; same MSB, check LSB
-        B0MOV     A, UDR0_R                           ; wLengthH < _usb_setup_data_len_m: use wLengthH,L
+        B0MOV     A, usb_setup_length_h               ; wLengthH < _usb_setup_data_len_m: use wLengthH,L
         B0MOV     _usb_setup_data_len_m, A
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         B0MOV     _usb_setup_data_len_l, A
         JMP       _load_ep0_buffer_from_flash
 @@:
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         ; the only important outcome is if wLengthL > _usb_setup_data_len_l, a one's complement is enough
         XOR       A, #0xff
         B0MOV     _scratch, A
@@ -701,44 +671,30 @@ _handle_get_descriptor_respond:
         B0ADD     _scratch, A
         B0BTS1    FC
         JMP       _load_ep0_buffer_from_flash         ; _usb_setup_data_len_l <= wLengthL: use _usb_setup_data_len_l
-        B0MOV     A, UDR0_R                           ; else, use wLengthL
+        B0MOV     A, usb_setup_length_l               ; else, use wLengthL
         B0MOV     _usb_setup_data_len_l, A
         JMP       _load_ep0_buffer_from_flash
 
 _handle_get_configuration:
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         CMPRS     A, #0x80
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         CMPRS     A, #0x01
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
         MOV       A, #0
@@ -749,39 +705,25 @@ _handle_get_configuration:
         JMP       usb_ack_ep0
 
 _handle_set_configuration:
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_INDEX_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_index_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0MOV     _active_configuration, A
         ; ABI:
         ; in: A contains wValueL
@@ -798,29 +740,19 @@ _handle_set_configuration:
         JMP       usb_stall_ep0
 
 _handle_get_interface:
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         CMPRS     A, #0x81
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_VALUE_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_value_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         CMPRS     A, #0x01
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
         B0MOV     A, _active_configuration
@@ -842,19 +774,13 @@ _handle_get_interface:
         JMP       usb_ack_ep0
 
 _handle_set_interface:
-        MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_request_type
         CMPRS     A, #0x01
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_l
         B0BTS1    FZ
         JMP       usb_stall_ep0
-        MOV       A, #UDPR0_ADDRESS_W_LENGTH_H
-        B0MOV     UDP0, A
-        B0MOV     A, UDR0_R
+        B0MOV     A, usb_setup_length_h
         B0BTS1    FZ
         JMP       usb_stall_ep0
         B0MOV     A, _active_configuration
