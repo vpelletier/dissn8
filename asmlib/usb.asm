@@ -224,16 +224,15 @@ _load_ep0_buffer_from_flash_loop:
         ; advance buffer pointer (also used as bytes-to-send counter)
         MOV       A, #1
         B0ADD     UDP0, A
+        ; Advance flash pointer (also used to update usb_descriptor_pointer_{m,l})
+        B0ADD     Z, A
+        B0BTS0    FC
+        B0ADD     Y, A
         ; Is there more to write ?
         MOV       A, #0xff                  ; -1
         B0ADD     _bytes_to_write, A
         B0BTS0    FZ
         JMP       _load_ep0_buffer_from_flash_exit
-        ; Yes, advance flash pointer...
-        MOV       A, #1
-        B0ADD     Z, A
-        B0BTS0    FC
-        B0ADD     Y, A
         ; ...and go to next iteration
         JMP       @B
 _load_ep0_buffer_from_flash_exit:
