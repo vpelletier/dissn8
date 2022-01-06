@@ -472,8 +472,7 @@ _handle_set_clear_feature:
         SUB       A, #5
         B0BTS0    FC
         JMP       usb_stall_ep0        ; endpoint > 4
-        B0MOV     A, UDR0_R
-        AND       A, #0x7f
+        ADD       A, #5                ; get A back to UDR0_R & #0x7f
         B0BTS0    _set_feature
         JMP       _handle_set_ep_feature
         B0ADD     PCL, A
