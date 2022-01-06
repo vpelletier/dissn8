@@ -131,26 +131,24 @@ usb_handle: ; modifies: A, R, Y, Z
 
 ; Call with number of bytes written to EP0 buffer in A (should be 0..8)
 usb_ack_ep0:
-        B0BCLR    FEP0OUT
-        B0BCLR    FEP0IN
         AND       A, #0x0f
         OR        A, #0x20 ; FUE0M0
         B0MOV     UE0R, A
         RET
 
 usb_stall_ep0:
-        B0BCLR    FEP0OUT
-        B0BCLR    FEP0IN
         B0BSET    FUE0M1
         RET
 
 _handle_ep0_out:
+        B0BCLR    FEP0OUT
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_out
         ; OUT data stage not needed for implemented standard requests
         RET
 
 _handle_ep0_in:
+        B0BCLR    FEP0IN
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_in
         B0BTS1    _setup_data_out
