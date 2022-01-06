@@ -146,7 +146,7 @@ _handle_ep0_out:
 _handle_ep0_in:
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_in
-        B0BTS0    _setup_data_out
+        B0BTS1    _setup_data_out
         ; IN data stage
         JMP       _load_ep0_buffer_from_flash
         ; IN status stage
