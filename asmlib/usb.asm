@@ -644,22 +644,25 @@ _get_descriptor_length:
 _handle_get_descriptor_respond:
         B0BTS0    FC
         JMP       usb_stall_ep0
+        ; _scratch = -usb_setup_length_h
         B0MOV     A, usb_setup_length_h
         XOR       A, #0xff
         ADD       A, #1
         B0MOV     _scratch, A
+        ; _scratch += _usb_setup_data_len_m
         B0MOV     A, _usb_setup_data_len_m
         B0ADD     _scratch, A
-        B0BTS0    FC
-        JMP       _load_ep0_buffer_from_flash         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
         B0BTS0    FZ
         JMP       @F                                  ; same MSB, check LSB
+        B0BTS0    FC
+        JMP       _load_ep0_buffer_from_flash         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
         B0MOV     A, usb_setup_length_h               ; wLengthH < _usb_setup_data_len_m: use wLengthH,L
         B0MOV     _usb_setup_data_len_m, A
         B0MOV     A, usb_setup_length_l
         B0MOV     _usb_setup_data_len_l, A
         JMP       _load_ep0_buffer_from_flash
 @@:
+        ; _scratch = -usb_setup_length_l + 1
         B0MOV     A, usb_setup_length_l
         ; the only important outcome is if wLengthL > _usb_setup_data_len_l, a one's complement is enough
         XOR       A, #0xff
