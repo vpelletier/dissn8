@@ -68,8 +68,6 @@ _ep0_handoff            EQU _bitmap0.1
 _set_feature            EQU _bitmap0.2 ; 0 for CLEAR_FEATURE, 1 for SET_FEATURE
 _setup_data_out         EQU _bitmap0.3 ; 0 for IN data stage + OUT status stage
                                        ; 1 for optional OUT data stage and IN status stage
-_data_in_from_flash     EQU _bitmap0.4 ; 0 if IN transfer data is already in buffer
-                                       ; 1 if it must be read from flash
 _active_configuration       DS 1
 usb_descriptor_pointer_l    DS 1
 usb_descriptor_pointer_m    DS 1
@@ -142,31 +140,31 @@ usb_stall_ep0:
 _handle_ep0_out:
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_out
-        B0BTS0    _setup_data_out
         ; OUT data stage not needed for implemented standard requests
-        JMP       usb_stall_ep0
-        MOV       A, #0
-        JMP       usb_ack_ep0                   ; OUT status stage, ack
+        RET
 
 _handle_ep0_in:
         B0BTS0    _ep0_handoff
         JMP       usb_on_ep0_in
-        MOV       A, #0
         B0BTS0    _setup_data_out
-        JMP       usb_ack_ep0                   ; IN status stage, ack
         ; IN data stage
-        B0BTS0    _data_in_from_flash
         JMP       _load_ep0_buffer_from_flash
-        B0BTS1    _has_pending_address
-        JMP       usb_stall_ep0
+        ; IN status stage
+        B0BTS0    _has_pending_address
+        RET
+        ; Finalise address change
         B0MOV     A, _pending_address
-        B0MOV     UDA, A                    ; Finalise address change
+        B0MOV     UDA, A
         B0BCLR    _has_pending_address
-        JMP       usb_ack_ep0
-_send_ep0_buffer:
-        B0MOV     A, UDP0
-        JMP       usb_ack_ep0
+        RET
+
 _load_ep0_buffer_from_flash:
+        ; copy data from flash to EP0 buffer for the next IN data stage
+        ; usb_descriptor_pointer_{m,l}:
+        ;   address of the first word to send (lsB then msB)
+        ; _usb_setup_data_len_{m,l}:
+        ;   number of bytes to send (in <=8 bytes transactions)
+        ; Updates these variables on each call.
         B0MOV     A, usb_descriptor_pointer_m
         B0MOV     Y, A
         B0MOV     A, usb_descriptor_pointer_l
@@ -239,7 +237,8 @@ _load_ep0_buffer_from_flash_exit:
         B0MOV     usb_descriptor_pointer_m, A
         B0MOV     A, Z
         B0MOV     usb_descriptor_pointer_l, A
-        JMP       _send_ep0_buffer
+        B0MOV     A, UDP0
+        JMP       usb_ack_ep0
 
 _handle_setupdata:
         MOV       A, #0x00
@@ -681,7 +680,7 @@ _handle_get_descriptor_respond:
         B0MOV     A, _usb_setup_data_len_m
         B0ADD     _scratch, A
         B0BTS0    FC
-        JMP       _handle_get_descriptor_done         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
+        JMP       _load_ep0_buffer_from_flash         ; _usb_setup_data_len_m < wLengthH: use _usb_setup_data_len_m,l
         B0BTS0    FZ
         JMP       @F                                  ; same MSB, check LSB
         B0MOV     A, UDR0_R                           ; wLengthH < _usb_setup_data_len_m: use wLengthH,L
@@ -690,7 +689,7 @@ _handle_get_descriptor_respond:
         B0MOV     UDP0, A
         B0MOV     A, UDR0_R
         B0MOV     _usb_setup_data_len_l, A
-        JMP       _handle_get_descriptor_done
+        JMP       _load_ep0_buffer_from_flash
 @@:
         MOV       A, #UDPR0_ADDRESS_W_LENGTH_L
         B0MOV     UDP0, A
@@ -701,12 +700,10 @@ _handle_get_descriptor_respond:
         B0MOV     A, _usb_setup_data_len_l
         B0ADD     _scratch, A
         B0BTS1    FC
-        JMP       _handle_get_descriptor_done         ; _usb_setup_data_len_l <= wLengthL: use _usb_setup_data_len_l
+        JMP       _load_ep0_buffer_from_flash         ; _usb_setup_data_len_l <= wLengthL: use _usb_setup_data_len_l
         B0MOV     A, UDR0_R                           ; else, use wLengthL
         B0MOV     _usb_setup_data_len_l, A
-_handle_get_descriptor_done:
-        B0BSET    _data_in_from_flash
-        JMP       _handle_ep0_in
+        JMP       _load_ep0_buffer_from_flash
 
 _handle_get_configuration:
         MOV       A, #UDPR0_ADDRESS_BM_REQUEST_TYPE
