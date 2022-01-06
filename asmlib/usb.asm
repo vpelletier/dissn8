@@ -474,37 +474,39 @@ _handle_set_clear_feature:
         JMP       usb_stall_ep0        ; endpoint > 4
         B0MOV     A, UDR0_R
         AND       A, #0x7f
-        B0ADD     PCL, A
-        JMP       _handle_set_clear_ep0_stall
-        JMP       _handle_set_clear_ep1_stall
-        JMP       _handle_set_clear_ep2_stall
-        JMP       _handle_set_clear_ep3_stall
-        ; handle set/clear endpoint 4 feature
         B0BTS0    _set_feature
+        JMP       _handle_set_ep_feature
+        B0ADD     PCL, A
+        JMP       _respond_set_clear_feature
+        JMP       _handle_clear_ep1_stall
+        JMP       _handle_clear_ep2_stall
+        JMP       _handle_clear_ep3_stall
         B0BCLR    FUE4M1
-        B0BTS1    _set_feature
+        JMP       _respond_set_clear_feature
+_handle_clear_ep1_stall:
+        B0BCLR    FUE1M1
+        JMP       _respond_set_clear_feature
+_handle_clear_ep2_stall:
+        B0BCLR    FUE2M1
+        JMP       _respond_set_clear_feature
+_handle_clear_ep3_stall:
+        B0BCLR    FUE3M1
+        JMP       _respond_set_clear_feature
+_handle_set_ep_feature:
+        B0ADD     PCL, A
+        JMP       usb_stall_ep0
+        JMP       _handle_set_ep1_stall
+        JMP       _handle_set_ep2_stall
+        JMP       _handle_set_ep3_stall
         B0BSET    FUE4M1
         JMP       _respond_set_clear_feature
-_handle_set_clear_ep0_stall:
-        B0BTS0    _set_feature
-        JMP       usb_stall_ep0
-        JMP       _respond_set_clear_feature
-_handle_set_clear_ep1_stall:
-        B0BTS0    _set_feature
-        B0BCLR    FUE1M1
-        B0BTS1    _set_feature
+_handle_set_ep1_stall:
         B0BSET    FUE1M1
         JMP       _respond_set_clear_feature
-_handle_set_clear_ep2_stall:
-        B0BTS0    _set_feature
-        B0BCLR    FUE2M1
-        B0BTS1    _set_feature
+_handle_set_ep2_stall:
         B0BSET    FUE2M1
         JMP       _respond_set_clear_feature
-_handle_set_clear_ep3_stall:
-        B0BTS0    _set_feature
-        B0BCLR    FUE3M1
-        B0BTS1    _set_feature
+_handle_set_ep3_stall:
         B0BSET    FUE3M1
 _respond_set_clear_feature:
         B0BSET    _setup_data_out
