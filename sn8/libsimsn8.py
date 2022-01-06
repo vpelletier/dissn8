@@ -350,11 +350,13 @@ class USBDevice:
 
     def _writeEP(self, endpoint, data, max_packet_size, deadline):
         send = self._cpu.usb.send
-        while data:
+        while True:
             # Wait for room to be available in endpoint buffer.
             self._waitForAckOrStall(endpoint, deadline)
             send(endpoint, data[:max_packet_size])
             data = data[max_packet_size:]
+            if not data:
+                break
 
     def clearFeature(self, recipient, feature, index=0, timeout=5):
         self.controlWrite(
