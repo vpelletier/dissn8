@@ -243,7 +243,7 @@ class USBDevice:
     def _waitForEP0EventsHandled(self, deadline):
         cpu = self._cpu
         step = self._step
-        while (cpu.FEP0SETUP or cpu.FEP0IN or cpu.FEP0OUT) and cpu.run_time < deadline:
+        while cpu.FEP0SETUP and cpu.run_time < deadline:
             step()
 
     def _waitForAckOrStall(self, endpoint, deadline):
