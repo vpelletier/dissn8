@@ -18,6 +18,7 @@
 Peripheral simulation.
 """
 from struct import unpack
+from .simsn8 import EndpointNAK
 
 I2C_IDLE = 0
 I2C_ADDRESS = 1
@@ -240,36 +241,6 @@ class USBDevice:
         self._cpu = cpu
         self._step = cpu.step if step is None else step
 
-    def _waitForEP0EventsHandled(self, deadline):
-        cpu = self._cpu
-        step = self._step
-        while cpu.FEP0SETUP and cpu.run_time < deadline:
-            step()
-
-    def _waitForAckOrStall(self, endpoint, deadline):
-        cpu = self._cpu
-        step = self._step
-        stall_attr_name = (
-            'FUE0M1',
-            'FUE1M1',
-            'FUE2M1',
-            'FUE3M1',
-            'FUE4M1',
-        )[endpoint]
-        ack_attr_name = (
-            'FUE0M0',
-            'FUE1M0',
-            'FUE2M0',
-            'FUE3M0',
-            'FUE4M0',
-        )[endpoint]
-        while (
-            not getattr(cpu, stall_attr_name) and
-            not getattr(cpu, ack_attr_name) and
-            cpu.run_time < deadline
-        ):
-            step()
-
     def _sleep(self, duration):
         cpu = self._cpu
         step = self._step
@@ -309,10 +280,18 @@ class USBDevice:
 
     def controlRead(self, request_type, request, value, index, length, timeout=5):
         cpu = self._cpu
+        step = self._step
         deadline = cpu.run_time + timeout
-        self._waitForEP0EventsHandled(deadline)
         request_type |= 0x80
-        cpu.usb.sendSETUP(request_type, request, value, index, length)
+        while True:
+            try:
+                cpu.usb.sendSETUP(request_type, request, value, index, length)
+            except EndpointNAK:
+                if cpu.run_time >= deadline:
+                    raise
+                step()
+            else:
+                break
         # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
         result = self._readEP(0, length, 8, deadline)
         self._writeEP(0, b'', 8, deadline)
@@ -320,10 +299,18 @@ class USBDevice:
 
     def controlWrite(self, request_type, request, value, index, data, timeout=5):
         cpu = self._cpu
+        step = self._step
         deadline = cpu.run_time + timeout
-        self._waitForEP0EventsHandled(deadline)
         request_type &= 0x7f
-        cpu.usb.sendSETUP(request_type, request, value, index, len(data))
+        while True:
+            try:
+                cpu.usb.sendSETUP(request_type, request, value, index, len(data))
+            except EndpointNAK:
+                if cpu.run_time >= deadline:
+                    raise
+                step()
+            else:
+                break
         # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
         if data:
             self._writeEP(0, data, 8, deadline)
@@ -336,12 +323,21 @@ class USBDevice:
         self._writeEP(endpoint, data, max_packet_size, self._cpu.run_time + timeout)
 
     def _readEP(self, endpoint, length, max_packet_size, deadline):
-        recv = self._cpu.usb.recv
+        cpu = self._cpu
+        recv = cpu.usb.recv
+        step = self._step
         result = b''
         while True:
             # Wait for data to be available in endpoint buffer.
-            self._waitForAckOrStall(endpoint, deadline)
-            chunk = recv(endpoint)
+            while True:
+                try:
+                    chunk = recv(endpoint)
+                except EndpointNAK:
+                    if cpu.run_time >= deadline:
+                        raise
+                    step()
+                else:
+                    break
             result += chunk
             if len(chunk) < max_packet_size:
                 assert len(result) <= length, (length, repr(result))
@@ -349,11 +345,20 @@ class USBDevice:
         return result
 
     def _writeEP(self, endpoint, data, max_packet_size, deadline):
-        send = self._cpu.usb.send
+        cpu = self._cpu
+        send = cpu.usb.send
+        step = self._step
         while True:
             # Wait for room to be available in endpoint buffer.
-            self._waitForAckOrStall(endpoint, deadline)
-            send(endpoint, data[:max_packet_size])
+            while True:
+                try:
+                    send(endpoint, data[:max_packet_size])
+                except EndpointNAK:
+                    if cpu.run_time >= deadline:
+                        raise
+                    step()
+                else:
+                    break
             data = data[max_packet_size:]
             if not data:
                 break
