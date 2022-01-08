@@ -350,27 +350,44 @@ class USB:
             enabled = True
             stall   = cpu.FUE0M1
             ack     = cpu.FUE0M0 and not cpu.FEP0SETUP
+            nak_int_en = False
         elif endpoint == 1:
             enabled = cpu.FUE1EN
             stall   = cpu.FUE1M1
             ack     = cpu.FUE1M0
+            nak_int_en = cpu.FEP1NAK_INT_EN
         elif endpoint == 2:
             enabled = cpu.FUE2EN
             stall   = cpu.FUE2M1
             ack     = cpu.FUE2M0
+            nak_int_en = cpu.FEP2NAK_INT_EN
         elif endpoint == 3:
             enabled = cpu.FUE3EN
             stall   = cpu.FUE3M1
             ack     = cpu.FUE3M0
+            nak_int_en = cpu.FEP3NAK_INT_EN
         elif endpoint == 4:
             enabled = cpu.FUE4EN
             stall   = cpu.FUE4M1
             ack     = cpu.FUE4M0
+            nak_int_en = cpu.FEP4NAK_INT_EN
+        else:
+            raise ValueError('Invalid endpoint')
         if not enabled:
             raise RuntimeError('Endpoint is disabled')
         if stall:
             raise EndpointStall
         if not ack:
+            if nak_int_en:
+                if endpoint == 1:
+                    cpu.FEP1_NAK = 1
+                elif endpoint == 2:
+                    cpu.FEP2_NAK = 1
+                elif endpoint == 3:
+                    cpu.FEP3_NAK = 1
+                elif endpoint == 4:
+                    cpu.FEP4_NAK = 1
+                self._interrupt()
             raise EndpointNAK
         start, stop = (
             0,
@@ -454,42 +471,22 @@ class USB:
         self._interrupt()
         return result
 
-    def setINHandshake(self, endpoint, ack=True):
+    def ackInterruptIN(self, endpoint):
         """
-        IN transaction handshake.
+        IN interrupt transfer ACK handshake.
         """
-        if endpoint == 0:
-            interrupt = False
+        cpu = self.cpu
+        if endpoint == 1:
+            cpu.FEP1_ACK = 1
+        elif endpoint == 2:
+            cpu.FEP2_ACK = 1
+        elif endpoint == 3:
+            cpu.FEP3_ACK = 1
+        elif endpoint == 4:
+            cpu.FEP4_ACK = 1
         else:
-            if ack:
-                interrupt = False
-                if endpoint == 1:
-                    cpu.FEP1_ACK = 1
-                elif endpoint == 2:
-                    cpu.FEP2_ACK = 1
-                elif endpoint == 3:
-                    cpu.FEP3_ACK = 1
-                elif endpoint == 4:
-                    cpu.FEP4_ACK = 1
-                else:
-                    raise ValueError('Invalid endpoint')
-            else:
-                if endpoint == 1:
-                    cpu.FEP1_NAK = 1
-                    interrupt = cpu.FEP1_NACK_INT_EN
-                elif endpoint == 2:
-                    cpu.FEP2_NAK = 1
-                    interrupt = cpu.FEP2_NACK_INT_EN
-                elif endpoint == 3:
-                    cpu.FEP3_NAK = 1
-                    interrupt = cpu.FEP3_NACK_INT_EN
-                elif endpoint == 4:
-                    cpu.FEP4_NAK = 1
-                    interrupt = cpu.FEP4_NACK_INT_EN
-                else:
-                    raise ValueError('Invalid endpoint')
-        if interrupt:
-            self._interrupt()
+            raise ValueError('Invalid endpoint')
+        self._interrupt()
 
     def readToggle(self):
         return self.toggle

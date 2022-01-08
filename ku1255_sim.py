@@ -484,7 +484,7 @@ def main():
     assert int(report_0_length) == report_0_length, report_0_length
     report_0_length = int(report_0_length)
     try:
-        device.usb_device.readEP(1, report_0_length, 63)
+        device.usb_device.readEP(1, report_0_length, 63, is_interrupt=True)
     except EndpointNAK:
         pass
     sleep(1)
@@ -504,7 +504,7 @@ def main():
     assert int(report_1_length) == report_1_length, report_1_length
     report_1_length = int(report_1_length)
     try:
-        device.usb_device.readEP(2, report_1_length, 63)
+        device.usb_device.readEP(2, report_1_length, 63, is_interrupt=True)
     except EndpointNAK:
         pass
     sleep(1)
@@ -542,11 +542,11 @@ def main():
         raise Timeout('Mouse not initialised')
     # Move and click the mouse a bit.
     device.setMouseState(1, -1, True, False, False)
-    report_ep2 = device.usb_device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    report_ep2 = device.usb_device.readEP(2, report_1_length, 63, is_interrupt=True) # XXX: should parse config_descriptor
     sleep(1)
     print('report    interface 1:', hexdump(report_ep2))
     try:
-        device.usb_device.readEP(2, report_1_length, 63)
+        device.usb_device.readEP(2, report_1_length, 63, is_interrupt=True)
     except EndpointNAK:
         pass
     else:
@@ -554,11 +554,11 @@ def main():
     sleep(1)
     # Stop moving mouse and release button.
     device.setMouseState(0, 0, False, False, False)
-    report_ep2 = device.usb_device.readEP(2, report_1_length, 63) # XXX: should parse config_descriptor
+    report_ep2 = device.usb_device.readEP(2, report_1_length, 63, is_interrupt=True) # XXX: should parse config_descriptor
     sleep(1)
     print('report    interface 1:', hexdump(report_ep2))
     try:
-        device.usb_device.readEP(2, report_1_length, 63)
+        device.usb_device.readEP(2, report_1_length, 63, is_interrupt=True)
     except EndpointNAK:
         pass
     else:
@@ -671,7 +671,7 @@ def main():
         for x in range(8):
             device.pressKey(y, x)
             try:
-                report = device.usb_device.readEP(1, report_0_length, 63, timeout=50)
+                report = device.usb_device.readEP(1, report_0_length, 63, timeout=50, is_interrupt=True)
             except EndpointNAK:
                 report = None
                 print('%14s' % '(nak)', end=' ')
@@ -686,15 +686,15 @@ def main():
                     print('%14s' % KEY_DICT.get(report[2], '(%#04x)' % report[2]), end=' ')
             device.releaseKey(y, x)
             if report is not None:
-                report = device.usb_device.readEP(1, report_0_length, 63, timeout=50)
+                report = device.usb_device.readEP(1, report_0_length, 63, timeout=50, is_interrupt=True)
                 sleep(1)
                 assert report == EMPTY_KEY_REPORT, hexdump(report)
         print()
     device.pressKey(13, 1) # LCTRL
-    device.usb_device.readEP(1, report_0_length, 63, timeout=500)
+    device.usb_device.readEP(1, report_0_length, 63, timeout=50, is_interrupt=True)
     sleep(1)
     device.pressKey(4, 5) # C
-    report = device.usb_device.readEP(1, report_0_length, 63, timeout=500)
+    report = device.usb_device.readEP(1, report_0_length, 63, timeout=50, is_interrupt=True)
     sleep(1)
     print(hexdump(report), MODIFIER_KEY_DICT.get(report[0], '(nothing)'), '+', KEY_DICT.get(report[2], '(nothing)'))
     return

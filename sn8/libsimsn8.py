@@ -326,8 +326,25 @@ class USBDevice:
         while cpu.FEP0IN and cpu.run_time < deadline:
             step()
 
-    def readEP(self, endpoint, length, max_packet_size, timeout=5):
-        return self._readEP(endpoint, length, max_packet_size, self._cpu.run_time + timeout)
+    def readEP(self, endpoint, length, max_packet_size, timeout=5, is_interrupt=False):
+        cpu = self._cpu
+        deadline = cpu.run_time + timeout
+        result = self._readEP(endpoint, length, max_packet_size, deadline)
+        if is_interrupt:
+            cpu.usb.ackInterruptIN(endpoint)
+            # XXX: I have no idea how to implement this in a nicer way (anything
+            # more elegant than stepping for some magic duration, but by
+            # watching USB-host-observable behaviour)
+            ep_ack_attribute_id = {
+                1: 'FEP1_ACK',
+                2: 'FEP2_ACK',
+                3: 'FEP3_ACK',
+                4: 'FEP4_ACK',
+            }[endpoint]
+            step = self._step
+            while getattr(cpu, ep_ack_attribute_id) and cpu.run_time < deadline:
+                step()
+        return result
 
     def writeEP(self, endpoint, data, max_packet_size, timeout=5):
         self._writeEP(endpoint, data, max_packet_size, self._cpu.run_time + timeout)
