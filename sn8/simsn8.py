@@ -1307,7 +1307,7 @@ class SN8:
 
     def _reloadCodeOptions(self):
         code_options = self.flash[0x2fff]
-        self.watchdog_enabled = code_options & 0x0f00 != 0b1010
+        self.watchdog_enabled = (code_options >> 8) & 0x0f != 0b1010
         self.watchdog_always_on = code_options & 0x0f00 == 0
         self.high_speed_cycle_duration_ms = {
             0x00: 1,
@@ -1350,7 +1350,7 @@ class SN8:
     def slow_tic(self):
         if (
             self.watchdog_enabled and
-            self.OSCM & 0x18 != 0x08 or self.watchdog_always_on
+            (self.OSCM & 0x18 != 0x08 or self.watchdog_always_on)
         ):
             self.watchdog.tic()
 
