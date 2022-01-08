@@ -155,7 +155,7 @@ _handle_ep0_in:
         ; IN data stage
         JMP       _load_ep0_buffer_from_flash
         ; IN status stage
-        B0BTS0    _has_pending_address
+        B0BTS1    _has_pending_address
         RET
         ; Finalise address change
         B0MOV     A, _pending_address
