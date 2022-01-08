@@ -295,6 +295,11 @@ class USBDevice:
         # Hardcoded max packet size, as it is fixed by cpu for endpoint 0
         result = self._readEP(0, length, 8, deadline)
         self._writeEP(0, b'', 8, deadline)
+        # XXX: I have no idea how to implement this in a nicer way (anything
+        # more elegant than stepping for some magic duration, but by watching
+        # USB-host-observable behaviour)
+        while cpu.FEP0OUT and cpu.run_time < deadline:
+            step()
         return result
 
     def controlWrite(self, request_type, request, value, index, data, timeout=5):
@@ -315,6 +320,11 @@ class USBDevice:
         if data:
             self._writeEP(0, data, 8, deadline)
         self._readEP(0, 0, 8, deadline)
+        # XXX: I have no idea how to implement this in a nicer way (anything
+        # more elegant than stepping for some magic duration, but by watching
+        # USB-host-observable behaviour)
+        while cpu.FEP0IN and cpu.run_time < deadline:
+            step()
 
     def readEP(self, endpoint, length, max_packet_size, timeout=5):
         return self._readEP(endpoint, length, max_packet_size, self._cpu.run_time + timeout)
