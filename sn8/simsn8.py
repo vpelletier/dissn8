@@ -82,7 +82,7 @@ REGISTERS_RESET_VALUE_LIST = (
     # 0     1     2     3     4     5     6     7     8     9     a     b     c     d     e     f
     MISS, MISS, None, None, None, MISS, 0x00, None, VOLA, VOLA, VOLA, VOLA, VOLA, VOLA, VOLA, VOLA, # 0x80
     VOLA, VOLA, VOLA, 0x00, 0x80, 0x00, 0x00, VOLA, VOLA, 0x00, VOLA, 0x00, VOLA, 0x00, VOLA, 0x00, # 0x90
-    0x00, 0x00, 0x00, 0x00, MISS, VOLA, VOLA, VOLA, VOLA, 0x00, 0x00, 0xd5, 0x00, 0x00, VOLA, VOLA, # 0xa0
+    0x00, 0x00, 0x00, 0x00, MISS, VOLA, VOLA, VOLA, VOLA, 0x00, 0x00, 0xd5, VOLA, VOLA, VOLA, VOLA, # 0xa0
     0x00, 0x00, 0x00, MISS, MISS, VOLA, 0x00, VOLA, VOLA, VOLA, VOLA, 0x00, 0x00, 0x00, 0x00, 0x0a, # 0xb0
     0x00, VOLA, VOLA, MISS, VOLA, VOLA, 0x00, 0x00, 0x00, 0x00, 0x00, MISS, VOLA, MISS, 0x00, 0x00, # 0xc0
     VOLA, VOLA, VOLA, MISS, VOLA, VOLA, MISS, MISS, VOLA, VOLA, VOLA, VOLA, VOLA, MISS, MISS, 0x07, # 0xd0
@@ -629,6 +629,13 @@ class UART:
     def readRXD2(self):
         raise NotImplementedError
 
+    def writeTXD1(self, value):
+        print('UART: %r' % chr(value))
+        self.cpu.INTRQ1 |= 0x08
+
+    def writeTXD2(self, value):
+        raise NotImplementedError
+
 class AnalogToDigitalConverter:
     def __init__(self, cpu, irq_name):
         self.cpu = cpu
@@ -957,6 +964,8 @@ class SN8:
             addr('UTOGGLE'):    (usb.readToggle,    usb.writeToggle),
             addr('URRXD1'):     (uart.readRXD1,     None),
             addr('URRXD2'):     (uart.readRXD2,     None),
+            addr('URTXD1'):     (None,              uart.writeTXD1),
+            addr('URTXD2'):     (None,              uart.writeTXD2),
             addr('ADB'):        (adc.readADB,       None),
             addr('ADR'):        (adc.readADR,       adc.writeADR),
             addr('P0M'):        (p0.readDirection,  p0.writeDirection),
