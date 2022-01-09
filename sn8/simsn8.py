@@ -20,7 +20,7 @@ import pdb
 from struct import unpack
 import warnings
 from .libsn8 import parseConfig
-from .dissn8 import systematic
+from .dissn8 import disassemble
 
 CONFIG_DIR = os.path.dirname(__file__)
 
@@ -894,8 +894,6 @@ class SN8:
             unpack('<H', flash_file.read(2))[0]
             for _ in range(0x3000)
         ]
-        # TODO: update on rom write
-        self.disassembly = systematic(dict(enumerate(self.flash)))
         self.run_time = 0
         self.cycle_count = 0
         self.p0 = p0 = Port(self, 5, 0.015, 0.015, 40000, 7)
@@ -1074,6 +1072,7 @@ class SN8:
         return getattr(self.__class__, name).address
 
     def __repr__(self):
+        pc = self.pc
         return '<%s@%08x run_time=%8.3fms cycle_count=%9i A=%#04x R=%#04x Y=%#04x Z=%#04x PC=%#06x FC=%i FZ=%i RBANK=%02i watchdog=%#08x%s instr=%-20s stack=%s>' % (
             self.__class__.__name__,
             id(self),
@@ -1083,7 +1082,7 @@ class SN8:
             self.ram[self.addressOf('R')] or 0,
             self.ram[self.addressOf('Y')] or 0,
             self.ram[self.addressOf('Z')] or 0,
-            self.pc,
+            pc,
             self.FC,
             self.FZ,
             self.ram[self.addressOf('RBANK')] or 0,
@@ -1093,7 +1092,7 @@ class SN8:
                 for x in ('t0', 't1', 'tc0', 'tc1', 'tc2')
                 if getattr(self, x).enabled
             ),
-            self.disassembly[self.pc].expandtabs(8),
+            disassemble(pc, self.flash[pc], None).expandtabs(8),
             ','.join(
                 '%#06x' % (
                     (
