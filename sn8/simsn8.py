@@ -290,17 +290,19 @@ class USB:
         self.ep4enable = value
 
     def tic(self):
-        cpu = self.cpu
-        cpu_time = cpu.run_time
+        # Warning: hot codepath
+        cpu_time = self.cpu.run_time
         if (
             self.device_se0_start_time is not None and
             cpu_time - self.device_se0_start_time > 1 # Wake signaling to host after 1ms
         ):
+            # cold codepath
             self.on_wake_signaling()
         if cpu_time > self.next_sof_time: # Full-speed SOFs are every 1ms
+            # cold codepath
             self.next_sof_time += 1
-            if cpu.FSOF_INT_EN: # XXX: hardcoded IEN flag
-                cpu.FSOF = 1
+            if self.cpu.FSOF_INT_EN: # XXX: hardcoded IEN flag
+                self.cpu.FSOF = 1
 
     def _interrupt(self):
         setattr(self.cpu, self.irq_name, 1)
