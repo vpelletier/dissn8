@@ -32,8 +32,8 @@
 ;   - usb_on_setupdata
 ;     Called when host initiated a non-standard SETUP request
 ;     (bmRequestType & 0x60 != 0).
-;     Expected to jump to usb_stall_ep0 if the request cannot be
-;     handled, or return otherwise.
+;     Expected to jump to usb_ack_ep0 if the request could be handled, otherwise
+;     to usb_stall_ep0.
 ;   - usb_on_ep0_out
 ;     Called for the OUT data stage of a non-standard SETUP request.
 ;     In the data stage, expected to jump to usb_stall_ep0 if the
@@ -44,8 +44,7 @@
 ;     Similar to usb_on_ep0_out, but for the IN data stage.
 ; - tries to stick to standard compliance
 ; - tries to not rely on host behaving in a strictly standard manner
-;   - does rely on host following proper transaction sequence (one OUT & IN max
-;     per SETUP transaction, consistently with bmRequestType.7)
+;   - does rely on host following proper transaction sequence
 ; - modifies A, R, Y, Z
 ; - needs 17 bytes in page zero
 
