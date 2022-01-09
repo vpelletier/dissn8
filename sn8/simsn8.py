@@ -990,7 +990,7 @@ class SN8:
         # Sanity check
         for key in self._volatile_dict:
             assert REGISTERS_RESET_VALUE_LIST[key - 0x80] is VOLA, hex(key)
-        # Non-volatile reisters which do not have all bits populated.
+        # Non-volatile registers which do not have all bits populated.
         # Volatile registers should handle masking on their own.
         self._register_mask_dict = {
             addr('PFLAG'):      0xc7,
@@ -1084,6 +1084,10 @@ class SN8:
             0x0200:           self.xch,                       # B0XCH M
         }
         self._stkp_underflow = False
+        # Step & tic optimisations (avoid going through __get__ and read)
+        self._oscm_addr = addr('OSCM')
+        self._fgie_addr = self.__class__.FGIE.address
+        self._fgie_mask = (1 << self.__class__.FGIE.bit)
         # Power-on reset
         self.reset(RESET_SOURCE_LOW_VOLTAGE)
 
@@ -1133,7 +1137,7 @@ class SN8:
         self.PCH = (value >> 8) & 0xff
 
     def step(self):
-        if self.OSCM & 0x18:
+        if self.ram[self._oscm_addr] & 0x18:
             # CPU is halted in green & sleep modes
             self.tic()
             return
@@ -1365,12 +1369,15 @@ class SN8:
     def slow_tic(self):
         if (
             self.watchdog_enabled and
-            (self.OSCM & 0x18 != 0x08 or self.watchdog_always_on)
+            (
+                self.ram[self._oscm_addr] & 0x18 != 0x08 or
+                self.watchdog_always_on
+            )
         ):
             self.watchdog.tic()
 
     def tic(self):
-        oscm = self.OSCM
+        oscm = self.ram[self._oscm_addr]
         fcpum1_0 = oscm & 0x18
         if fcpum1_0 == 0x08:
             # sleep
@@ -1406,7 +1413,9 @@ class SN8:
         # - does setting an EN flag trigger an interrupt it masked ?
         # - does setting GIE trigger an interrupt it masked ?
         old_interrupt_line = self._irq_line
-        self._irq_line = new_interrupt_line = self.FGIE and (
+        self._irq_line = new_interrupt_line = (
+            self.ram[self._fgie_addr] & self._fgie_mask
+        ) and (
             (
                 self.INTRQ & self.INTEN
             ) or (
@@ -1417,7 +1426,7 @@ class SN8:
             self.interrupt()
 
     def wake(self):
-        oscm = self.OSCM
+        oscm = self.ram[self._oscm_addr]
         fcpum1_0 = oscm & 0x18
         if fcpum1_0 == 0x08:
             # Wake from halt: return to normal mode
