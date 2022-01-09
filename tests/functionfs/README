@@ -1,0 +1,7 @@
+To build:
+  assn8 -I asmlib -o tests/functionfs/test_usb_firmware.bin tests/functionfs/test_usb_firmware.asm
+
+To run:
+  sudo python -m sn8.functionfs tests/functionfs/test_usb_firmware.bin
+
+TODO: make a test-case out of this code.
