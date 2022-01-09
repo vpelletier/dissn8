@@ -664,8 +664,6 @@ def main():
         DELAY_MICRO = DELAY_POLL * 1000 * MICRO_RATIO
         try:
             while True:
-                # TODO: poll with some (small) timeout, to not eat an entire cpu
-                # and maybe call sleep on the µC with the same duration
                 for fd, event in epoll.poll(DELAY_POLL):
                     handler_dict[fd]()
                 deadline = cpu.run_time + DELAY_MICRO
