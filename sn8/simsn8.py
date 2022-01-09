@@ -351,26 +351,36 @@ class USB:
             stall   = cpu.FUE0M1
             ack     = cpu.FUE0M0 and not cpu.FEP0SETUP
             nak_int_en = False
+            start = 0
+            stop = 8
         elif endpoint == 1:
             enabled = cpu.FUE1EN
             stall   = cpu.FUE1M1
             ack     = cpu.FUE1M0
             nak_int_en = cpu.FEP1NAK_INT_EN
+            start = 8
+            stop = cpu.EP2FIFO_ADDR or 0x136
         elif endpoint == 2:
             enabled = cpu.FUE2EN
             stall   = cpu.FUE2M1
             ack     = cpu.FUE2M0
             nak_int_en = cpu.FEP2NAK_INT_EN
+            start = cpu.EP2FIFO_ADDR or 0x136
+            stop = cpu.EP3FIFO_ADDR or 0x136
         elif endpoint == 3:
             enabled = cpu.FUE3EN
             stall   = cpu.FUE3M1
             ack     = cpu.FUE3M0
             nak_int_en = cpu.FEP3NAK_INT_EN
+            start = cpu.EP3FIFO_ADDR or 0x136
+            stop = cpu.EP4FIFO_ADDR or 0x136
         elif endpoint == 4:
             enabled = cpu.FUE4EN
             stall   = cpu.FUE4M1
             ack     = cpu.FUE4M0
             nak_int_en = cpu.FEP4NAK_INT_EN
+            start = cpu.EP4FIFO_ADDR or 0x136
+            stop = 0x136
         else:
             raise ValueError('Invalid endpoint')
         if not enabled:
@@ -389,14 +399,6 @@ class USB:
                     cpu.FEP4_NAK = 1
                 self._interrupt()
             raise EndpointNAK
-        start, stop = (
-            0,
-            8,
-            cpu.EP2FIFO_ADDR or 0x136,
-            cpu.EP3FIFO_ADDR or 0x136,
-            cpu.EP4FIFO_ADDR or 0x136,
-            0x136,
-        )[endpoint:endpoint + 2]
         return start, max(start, stop)
 
     def send(self, endpoint, data):
