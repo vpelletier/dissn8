@@ -60,7 +60,7 @@ class BitProperty:
         self._clear_mask = (~self._set_mask) & 0xff
 
     def __get__(self, instance, owner):
-        if instance is owner:
+        if instance is None:
             return self
         return (instance.read(self.address) >> self.bit) & 1
 
