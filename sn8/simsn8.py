@@ -839,18 +839,20 @@ class Timer:
     def enabled(self):
         return bool(self.mode & 0x80)
 
+    def _disabled_tic(self):
+        return
+
     # TODO: P0.{1,2,3} input
-    def tic(self):
-        if self.mode & 0x88 == 0x80:
-            self.internal_count += 1
-            if self.internal_count & self.internal_mask == 0:
-                self.internal_count = 0
-                self.value += 1
-                if self.value & self.counter_mask == 0:
-                    self.value = self.reload if self.mode & 0x04 else 0
-                    if self.can_wake:
-                        self.cpu.wake()
-                    setattr(self.cpu, self.irq_name, 1)
+    def _enabled_tic(self):
+        self.internal_count += 1
+        if self.internal_count & self.internal_mask == 0:
+            self.internal_count = 0
+            self.value += 1
+            if self.value & self.counter_mask == 0:
+                self.value = self.reload if self.mode & 0x04 else 0
+                if self.can_wake:
+                    self.cpu.wake()
+                setattr(self.cpu, self.irq_name, 1)
 
     def readLow(self):
         return self.value & 0xff
@@ -883,6 +885,19 @@ class Timer:
             0x60: 0x03,
             0x70: 0x01,
         }[value & 0x70]
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value):
+        self._mode = value
+        self.tic = (
+            self._enabled_tic
+            if value & 0x88 == 0x80 else
+            self._disabled_tic
+        )
 
 class TimerCounter(Timer):
     def __init__(self, cpu, irq_name):
