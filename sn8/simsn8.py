@@ -631,6 +631,13 @@ class UART:
 
     def writeTXD1(self, value):
         print('UART: %r' % chr(value))
+        # TODO:
+        # - implement a tic method and get it called by the cpu
+        # - serially shift the data bits at the correct rate (WRT cpu.run_time
+        #   and UART rate settings)
+        # - only set the IRQ bit when the transfer is actually complete.
+        # - implement a serial-to-parallel adatper in sn8.libsimsn8 which would
+        #   react to level changes in the serial output
         setattr(self.cpu, self.tx_irq_name, True)
 
     def writeTXD2(self, value):
@@ -920,6 +927,8 @@ class SN8:
             unpack('<H', flash_file.read(2))[0]
             for _ in range(0x3000)
         ]
+        # TODO: add pinmux outside of ports, and move load management at this
+        # level.
         self.run_time = 0
         self.cycle_count = 0
         self.p0 = p0 = Port(self, 5, 0.015, 0.015, 40000, 7)
