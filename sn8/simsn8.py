@@ -631,7 +631,7 @@ class UART:
 
     def writeTXD1(self, value):
         print('UART: %r' % chr(value))
-        self.cpu.INTRQ1 |= 0x08
+        setattr(self.cpu, self.tx_irq_name, True)
 
     def writeTXD2(self, value):
         raise NotImplementedError
