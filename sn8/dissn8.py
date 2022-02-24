@@ -288,9 +288,9 @@ def main():
             'for stdout (default).')
     parser.add_argument('--dot', action='store_true',
         help='Write function graphs in dot format in <basename(input)> folder.')
-    parser.add_argument('input', type=argparse.FileType('rb'), nargs='?',
-        default=sys.stdin, help='Path of binary rom image file to '
-            'disassemble, or - for stdin (default).')
+    parser.add_argument('input', nargs='?', default='-',
+        help='Path of binary rom image file to disassemble, or - for stdin '
+            '(default).')
     args = parser.parse_args()
     write = args.output.write
     chip = parseConfig(args.chip)
@@ -344,7 +344,15 @@ def main():
     comment_dict = chip['comment']
     for reserved in rom_reserved_set:
         comment_dict.setdefault(reserved, 'Reserved')
-    read = args.input.read
+    if args.input == '-':
+        input = sys.stdin
+        try:
+            input = input.buffer
+        except AttributeError:
+            pass
+    else:
+        input = open(args.input, 'rb')
+    read = input.read
     if args.skip_header:
         read(88)
     rom = {}
@@ -401,7 +409,7 @@ def main():
     dot = args.dot
     if dot:
         dot_dict = defaultdict(list)
-        dot_path = os.path.splitext(args.input.name)[0]
+        dot_path = os.path.splitext(input.name)[0]
         if not os.path.exists(dot_path):
             os.mkdir(dot_path)
         def dot_escape(value):
